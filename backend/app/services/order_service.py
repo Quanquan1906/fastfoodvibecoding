@@ -9,14 +9,30 @@ from typing import List, Optional
 class OrderService:
     """Service for order operations"""
 
+    @staticmethod
+    def _serialize_order(doc: dict) -> dict:
+        out = dict(doc)
+        if "_id" in out:
+            out["id"] = str(out.pop("_id"))
+        return out
+
     async def create_order(self, customer_id: str, restaurant_id: str, items: List[OrderItem], total: float) -> dict:
         """Create a new order"""
         db = get_db()
+
+        serialized_items = []
+        for item in items:
+            if isinstance(item, dict):
+                serialized_items.append(item)
+            elif hasattr(item, "model_dump"):
+                serialized_items.append(item.model_dump())
+            else:
+                serialized_items.append(item.dict())
         
         order_doc = {
             "customer_id": customer_id,
             "restaurant_id": restaurant_id,
-            "items": [item.dict() for item in items],
+            "items": serialized_items,
             "total": total,
             "status": "PENDING",
             "delivery_lat": 10.762622,
@@ -41,30 +57,21 @@ class OrderService:
         if not order:
             return None
         
-        return {
-            "id": str(order["_id"]),
-            **order
-        }
+        return self._serialize_order(order)
 
     async def get_customer_orders(self, customer_id: str) -> List[dict]:
         """Get all orders for a customer"""
         db = get_db()
         orders = await db.orders.find({"customer_id": customer_id}).to_list(None)
         
-        return [
-            {"id": str(order["_id"]), **order}
-            for order in orders
-        ]
+        return [self._serialize_order(order) for order in orders]
 
     async def get_restaurant_orders(self, restaurant_id: str) -> List[dict]:
         """Get all orders for a restaurant"""
         db = get_db()
         orders = await db.orders.find({"restaurant_id": restaurant_id}).to_list(None)
         
-        return [
-            {"id": str(order["_id"]), **order}
-            for order in orders
-        ]
+        return [self._serialize_order(order) for order in orders]
 
     async def update_order_status(self, order_id: str, status: str) -> dict:
         """Update order status"""
@@ -103,7 +110,4 @@ class OrderService:
         db = get_db()
         orders = await db.orders.find().to_list(None)
         
-        return [
-            {"id": str(order["_id"]), **order}
-            for order in orders
-        ]
+        return [self._serialize_order(order) for order in orders]

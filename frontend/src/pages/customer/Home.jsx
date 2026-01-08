@@ -10,7 +10,6 @@ function CustomerHome() {
   const [restaurants, setRestaurants] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
-  const user = JSON.parse(localStorage.getItem("user") || "{}");
 
   useEffect(() => {
     fetchRestaurants();

@@ -1,7 +1,7 @@
 /**
  * Customer Checkout - View Menu & Create Order
  */
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import "./Customer.css";
@@ -16,11 +16,7 @@ function CustomerCheckout() {
   const [loading, setLoading] = useState(true);
   const [ordering, setOrdering] = useState(false);
 
-  useEffect(() => {
-    fetchRestaurantAndMenu();
-  }, [restaurantId]);
-
-  const fetchRestaurantAndMenu = async () => {
+  const fetchRestaurantAndMenu = useCallback(async () => {
     try {
       const [restRes, menuRes] = await Promise.all([
         api.get(`/restaurants/${restaurantId}`),
@@ -33,7 +29,11 @@ function CustomerCheckout() {
       console.error("Error fetching data:", error);
       setLoading(false);
     }
-  };
+  }, [restaurantId]);
+
+  useEffect(() => {
+    fetchRestaurantAndMenu();
+  }, [fetchRestaurantAndMenu]);
 
   const addToCart = (item) => {
     const existingItem = cart.find((ci) => ci.menu_item_id === item.id);
@@ -51,7 +51,7 @@ function CustomerCheckout() {
         {
           menu_item_id: item.id,
           name: item.name,
-          price: item.price,
+          price: Number(item.price),
           quantity: 1,
         },
       ]);
@@ -63,7 +63,7 @@ function CustomerCheckout() {
   };
 
   const calculateTotal = () => {
-    return cart.reduce((sum, item) => sum + item.price * item.quantity, 0).toFixed(2);
+    return cart.reduce((sum, item) => sum + Number(item.price) * Number(item.quantity), 0);
   };
 
   const handlePlaceOrder = async () => {
@@ -72,28 +72,39 @@ function CustomerCheckout() {
       return;
     }
 
+    if (!user?.id) {
+      alert("❌ Missing customer id. Please log in again.");
+      return;
+    }
+
     setOrdering(true);
     try {
-      const total = parseFloat(calculateTotal());
-      const response = await api.post(
-        "/orders",
-        null,
-        {
-          params: {
-            customer_id: user.id,
-            restaurant_id: restaurantId,
-            items: JSON.stringify(cart),
-            total: total,
-          },
-        }
-      );
+      const total = Number(calculateTotal().toFixed(2));
+      const response = await api.post("/orders", {
+        customer_id: user.id,
+        restaurant_id: restaurantId,
+        items: cart.map((ci) => ({
+          menu_item_id: String(ci.menu_item_id),
+          name: String(ci.name),
+          price: Number(ci.price),
+          quantity: Number(ci.quantity),
+        })),
+        total_price: total,
+      });
 
       if (response.data.success) {
         const orderId = response.data.order.id;
         navigate(`/customer/track/${orderId}`);
       }
     } catch (error) {
-      alert("❌ Error creating order: " + error.message);
+      const status = error?.response?.status;
+      const detail = error?.response?.data?.detail;
+      if (status === 422) {
+        alert("❌ Validation error (422). Check required fields and types.");
+        console.error("422 detail:", detail);
+      } else {
+        alert("❌ Error creating order: " + (detail || error.message));
+      }
     } finally {
       setOrdering(false);
     }
@@ -162,7 +173,7 @@ function CustomerCheckout() {
               </div>
 
               <div className="cart-total">
-                <h3>Total: ${calculateTotal()}</h3>
+                <h3>Total: ${calculateTotal().toFixed(2)}</h3>
               </div>
 
               <button

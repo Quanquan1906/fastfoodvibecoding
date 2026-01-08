@@ -1,43 +1,47 @@
 /**
  * Customer Track Order - Real-time tracking with fake drone movement
  */
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api from "../../services/api";
+import DroneMap from "../../components/DroneMap";
 import "./Customer.css";
+
+function clamp01(x) {
+  return Math.max(0, Math.min(1, x));
+}
 
 function CustomerTrackOrder() {
   const { orderId } = useParams();
   const navigate = useNavigate();
-  const user = JSON.parse(localStorage.getItem("user") || "{}");
   const [order, setOrder] = useState(null);
+  const orderStatus = order?.status;
+  const droneLat = order?.drone_lat;
+  const droneLon = order?.drone_lon;
   const [loading, setLoading] = useState(true);
   const [paymentDone, setPaymentDone] = useState(false);
-  const [ws, setWs] = useState(null);
+  const wsRef = useRef(null);
+  const [progress, setProgress] = useState(0);
+  const [completing, setCompleting] = useState(false);
+  const [deliveredMessage, setDeliveredMessage] = useState("");
+  const [startPoint, setStartPoint] = useState(null);
 
-  useEffect(() => {
-    fetchOrder();
-    setupWebSocket();
-
-    return () => {
-      if (ws) {
-        ws.close();
-      }
-    };
-  }, [orderId]);
-
-  const fetchOrder = async () => {
+  const fetchOrder = useCallback(async () => {
     try {
       const response = await api.get(`/orders/${orderId}`);
       setOrder(response.data);
+      if (response.data?.status === "COMPLETED") {
+        setProgress(100);
+        setDeliveredMessage("Order delivered successfully");
+      }
       setLoading(false);
     } catch (error) {
       console.error("Error fetching order:", error);
       setLoading(false);
     }
-  };
+  }, [orderId]);
 
-  const setupWebSocket = () => {
+  const setupWebSocket = useCallback(() => {
     const wsUrl = `ws://localhost:8000/ws/orders/${orderId}`;
     const wsConnection = new WebSocket(wsUrl);
 
@@ -50,8 +54,69 @@ function CustomerTrackOrder() {
       console.error("WebSocket error:", error);
     };
 
-    setWs(wsConnection);
-  };
+    wsRef.current = wsConnection;
+  }, [orderId]);
+
+  useEffect(() => {
+    fetchOrder();
+    setupWebSocket();
+
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [fetchOrder, setupWebSocket]);
+
+  useEffect(() => {
+    if (orderStatus !== "DELIVERING") {
+      return;
+    }
+
+    if (!startPoint && droneLat != null && droneLon != null) {
+      setStartPoint({ lat: droneLat, lng: droneLon });
+    }
+
+    // Demo simulation: progress increases until arrival.
+    const intervalId = setInterval(() => {
+      setProgress((p) => {
+        const next = Math.min(100, p + 5);
+        return next;
+      });
+    }, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [orderStatus, droneLat, droneLon, startPoint]);
+
+  useEffect(() => {
+    const shouldComplete = orderStatus === "DELIVERING" && progress >= 100;
+    if (!shouldComplete || completing) return;
+
+    const doComplete = async () => {
+      setCompleting(true);
+      try {
+        const res = await api.post(`/orders/${orderId}/complete`);
+        if (res.data?.success) {
+          setDeliveredMessage(res.data.message || "Order delivered successfully");
+          // Ensure UI updates even if websocket isn't available
+          setOrder((prev) => (prev ? { ...prev, status: "COMPLETED" } : prev));
+          await fetchOrder();
+        } else {
+          setDeliveredMessage("Order delivered successfully");
+          setOrder((prev) => (prev ? { ...prev, status: "COMPLETED" } : prev));
+        }
+      } catch (error) {
+        const detail = error?.response?.data?.detail;
+        console.error("Failed to complete order:", error);
+        setDeliveredMessage(detail || "Failed to mark order completed");
+      } finally {
+        setCompleting(false);
+      }
+    };
+
+    doComplete();
+  }, [progress, orderStatus, completing, orderId, fetchOrder]);
 
   const handleMockPayment = async () => {
     try {
@@ -104,6 +169,17 @@ function CustomerTrackOrder() {
     );
   }
 
+  const simulatedDronePosition = (() => {
+    if (!startPoint) return null;
+    if (order?.delivery_lat == null || order?.delivery_lon == null) return null;
+
+    const t = clamp01(Number(progress) / 100);
+    const lat = startPoint.lat + (order.delivery_lat - startPoint.lat) * t;
+    const lng = startPoint.lng + (order.delivery_lon - startPoint.lng) * t;
+
+    return { lat, lng };
+  })();
+
   return (
     <div className="page-container">
       <div className="header">
@@ -144,19 +220,51 @@ function CustomerTrackOrder() {
           {order.status === "DELIVERING" && order.drone_id && (
             <div className="drone-tracking">
               <h3>🚁 Drone Tracking</h3>
-              <p>Latitude: {order.drone_lat?.toFixed(6)}</p>
-              <p>Longitude: {order.drone_lon?.toFixed(6)}</p>
+              {startPoint && order.delivery_lat != null && order.delivery_lon != null ? (
+                <div style={{ marginBottom: 12 }}>
+                  <DroneMap
+                    startLat={startPoint.lat}
+                    startLng={startPoint.lng}
+                    endLat={order.delivery_lat}
+                    endLng={order.delivery_lon}
+                    progress={progress}
+                  />
+                </div>
+              ) : null}
+              <p>
+                Latitude: {simulatedDronePosition ? simulatedDronePosition.lat.toFixed(6) : "—"}
+              </p>
+              <p>
+                Longitude: {simulatedDronePosition ? simulatedDronePosition.lng.toFixed(6) : "—"}
+              </p>
               <p>Destination: {order.delivery_lat?.toFixed(6)}, {order.delivery_lon?.toFixed(6)}</p>
               <div className="progress-bar">
-                <div className="progress-fill">Moving...</div>
+                <div
+                  className="progress-fill"
+                  style={{ width: `${Math.min(100, progress)}%` }}
+                >
+                  {progress >= 100 ? "Arrived" : `Moving... ${progress}%`}
+                </div>
               </div>
+            </div>
+          )}
+
+          {order.status === "COMPLETED" && startPoint && (
+            <div style={{ marginTop: 16 }}>
+              <DroneMap
+                startLat={startPoint.lat}
+                startLng={startPoint.lng}
+                endLat={order.delivery_lat}
+                endLng={order.delivery_lon}
+                progress={100}
+              />
             </div>
           )}
 
           {order.status === "COMPLETED" && (
             <div className="completed-message">
               <h3>✅ Order Completed!</h3>
-              <p>Thank you for your order! 🎉</p>
+              <p>{deliveredMessage || "Order delivered successfully"}</p>
               <button
                 onClick={() => navigate("/customer/home")}
                 className="btn btn-primary"

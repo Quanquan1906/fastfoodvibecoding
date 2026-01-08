@@ -1,13 +1,45 @@
 """Order model"""
-from pydantic import BaseModel
-from typing import Optional, List
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from typing import List, Optional
 
 class OrderItem(BaseModel):
     """Item in an order"""
     menu_item_id: str
     name: str
-    price: float
-    quantity: int
+    price: float = Field(..., ge=0)
+    quantity: int = Field(..., ge=1)
+
+
+class OrderCreate(BaseModel):
+    """Payload for creating an order (request body)."""
+
+    customer_id: str
+    restaurant_id: str
+    items: List[OrderItem] = Field(..., min_length=1)
+    total_price: float = Field(..., ge=0)
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "customer_id": "cust_123",
+                "restaurant_id": "rest_123",
+                "items": [
+                    {"menu_item_id": "item_1", "name": "Pizza", "price": 12.99, "quantity": 1}
+                ],
+                "total_price": 12.99,
+            }
+        },
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_legacy_total(cls, data):
+        # Backward-compat: some clients still send {"total": ...}
+        if isinstance(data, dict) and "total_price" not in data and "total" in data:
+            data = dict(data)
+            data["total_price"] = data["total"]
+        return data
 
 class Order(BaseModel):
     """Order placed by customer"""

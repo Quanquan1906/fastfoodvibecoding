@@ -1,7 +1,7 @@
 /**
  * View Customer Orders
  */
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import "./Customer.css";
@@ -12,11 +12,7 @@ function CustomerOrders() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchOrders();
-  }, []);
-
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     try {
       const response = await api.get(`/customer/${user.id}/orders`);
       setOrders(response.data);
@@ -25,7 +21,11 @@ function CustomerOrders() {
       console.error("Error fetching orders:", error);
       setLoading(false);
     }
-  };
+  }, [user.id]);
+
+  useEffect(() => {
+    fetchOrders();
+  }, [fetchOrders]);
 
   const handleTrackOrder = (orderId) => {
     navigate(`/customer/track/${orderId}`);

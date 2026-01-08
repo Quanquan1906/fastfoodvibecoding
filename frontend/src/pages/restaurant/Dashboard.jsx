@@ -14,6 +14,10 @@ function RestaurantDashboard() {
   const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [assigningOrderId, setAssigningOrderId] = useState(null);
+  const [availableDrones, setAvailableDrones] = useState([]);
+  const [selectedDroneId, setSelectedDroneId] = useState("");
+  const [loadingDrones, setLoadingDrones] = useState(false);
   const [newItem, setNewItem] = useState({
     name: "",
     description: "",
@@ -107,7 +111,7 @@ function RestaurantDashboard() {
 
   const handleUpdateStatus = async (orderId, status) => {
     try {
-      const response = await api.post(
+      await api.post(
         `/restaurant/orders/${orderId}/status`,
         null,
         { params: { status } }
@@ -116,6 +120,55 @@ function RestaurantDashboard() {
       alert(`✅ Status updated to ${status}`);
     } catch (error) {
       alert("❌ Error: " + error.message);
+    }
+  };
+
+  const startAssignDrone = async (orderId) => {
+    setAssigningOrderId(orderId);
+    setSelectedDroneId("");
+    setAvailableDrones([]);
+    setLoadingDrones(true);
+    setErrorMessage("");
+
+    try {
+      const res = await api.get(`/restaurant/${user.restaurant_id}/drones`);
+      setAvailableDrones(Array.isArray(res.data) ? res.data : []);
+    } catch (error) {
+      const status = error?.response?.status;
+      const detail = error?.response?.data?.detail;
+      if (status === 400 || status === 404 || status === 409) {
+        setErrorMessage(detail || `Request failed (${status})`);
+      } else {
+        setErrorMessage("Failed to fetch drones");
+      }
+      setAssigningOrderId(null);
+    } finally {
+      setLoadingDrones(false);
+    }
+  };
+
+  const confirmAssignDrone = async (orderId) => {
+    if (!selectedDroneId) {
+      alert("❌ Please select a drone");
+      return;
+    }
+
+    try {
+      setErrorMessage("");
+      await api.post(`/orders/${orderId}/assign-drone`, { drone_id: selectedDroneId });
+      setAssigningOrderId(null);
+      setSelectedDroneId("");
+      setAvailableDrones([]);
+      await fetchData();
+      alert("✅ Drone assigned!");
+    } catch (error) {
+      const status = error?.response?.status;
+      const detail = error?.response?.data?.detail;
+      if (status === 400 || status === 404 || status === 409) {
+        alert(`❌ ${detail || `Request failed (${status})`}`);
+      } else {
+        alert("❌ Failed to assign drone");
+      }
     }
   };
 
@@ -207,10 +260,62 @@ function RestaurantDashboard() {
                         </button>
                       )}
                       {order.status === "READY_FOR_PICKUP" && (
-                        <p className="info">⏳ Waiting for drone assignment...</p>
+                        <div>
+                          {assigningOrderId === order.id ? (
+                            <div>
+                              {loadingDrones ? (
+                                <p className="info">⏳ Loading drones...</p>
+                              ) : availableDrones.length === 0 ? (
+                                <p className="info">No available drones</p>
+                              ) : (
+                                <>
+                                  <select
+                                    value={selectedDroneId}
+                                    onChange={(e) => setSelectedDroneId(e.target.value)}
+                                  >
+                                    <option value="">Select a drone</option>
+                                    {availableDrones.map((d) => (
+                                      <option key={d.id} value={d.id}>
+                                        {d.name} ({d.status})
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <div style={{ marginTop: 8 }}>
+                                    <button
+                                      onClick={() => confirmAssignDrone(order.id)}
+                                      className="btn btn-primary"
+                                      disabled={!selectedDroneId}
+                                    >
+                                      🚁 Assign
+                                    </button>
+                                    <button
+                                      onClick={() => setAssigningOrderId(null)}
+                                      className="btn btn-danger"
+                                      style={{ marginLeft: 8 }}
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          ) : (
+                            <>
+                              <p className="info">⏳ Waiting for drone assignment...</p>
+                              <button
+                                onClick={() => startAssignDrone(order.id)}
+                                className="btn btn-primary"
+                              >
+                                🚁 Assign Drone
+                              </button>
+                            </>
+                          )}
+                        </div>
                       )}
                       {order.status === "DELIVERING" && (
-                        <p className="info">🚁 On delivery...</p>
+                        <p className="info">
+                          🚁 Delivering{order.drone_name ? ` with ${order.drone_name}` : ""}...
+                        </p>
                       )}
                     </div>
                   </div>

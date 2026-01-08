@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from app.models.user import User, LoginRequest
 from app.models.restaurant import Restaurant
 from app.models.menu_item import MenuItem
-from app.models.order import Order, OrderItem
+from app.models.order import Order, OrderCreate, OrderItem
 from app.models.drone import Drone
 from app.services.auth_service import AuthService
 from app.services.payment_service import PaymentService
@@ -15,10 +15,20 @@ from app.core.database import get_db
 from app.websocket.manager import manager
 from bson import ObjectId
 from bson.errors import InvalidId
-from typing import Any, Dict, List
+from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional
 import asyncio
 
 router = APIRouter()
+
+
+class AdminAssignDroneRequest(BaseModel):
+    drone_id: str
+    restaurant_id: str
+
+
+class AssignDroneToOrderRequest(BaseModel):
+    drone_id: str = Field(..., min_length=1)
 
 
 def _parse_object_id(value: str, *, field_name: str) -> ObjectId:
@@ -46,6 +56,9 @@ def _serialize_mongo_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
 
     if isinstance(out.get("restaurant_id"), ObjectId):
         out["restaurant_id"] = str(out["restaurant_id"])
+
+    if isinstance(out.get("drone_id"), ObjectId):
+        out["drone_id"] = str(out["drone_id"])
 
     return out
 
@@ -111,16 +124,31 @@ async def get_restaurant_menu(restaurant_id: str):
 
 
 @router.post("/orders")
-async def create_order(customer_id: str, restaurant_id: str, items: List[OrderItem], total: float):
+async def create_order(payload: OrderCreate):
     """Create new order"""
     try:
-        order = await order_service.create_order(customer_id, restaurant_id, items, total)
-        return JSONResponse({
-            "success": True,
-            "order": order
-        })
+        db = get_db()
+        rid = _parse_object_id(payload.restaurant_id, field_name="restaurant_id")
+
+        restaurant = await db.restaurants.find_one({"_id": rid})
+        if not restaurant:
+            raise HTTPException(status_code=404, detail="Restaurant not found")
+
+        order = await order_service.create_order(
+            payload.customer_id,
+            payload.restaurant_id,
+            payload.items,
+            payload.total_price,
+        )
+        response_payload = {"success": True, "order": order}
+        return JSONResponse(
+            content=jsonable_encoder(response_payload, custom_encoder={ObjectId: str})
+        )
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        # Surface a useful message to the client for demo/debugging.
+        raise HTTPException(status_code=500, detail=f"Failed to create order: {str(e)}")
 
 
 @router.get("/orders/{order_id}")
@@ -133,6 +161,37 @@ async def get_order(order_id: str):
         return order
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/orders/{order_id}/complete")
+async def complete_order(order_id: str):
+    """Mark an order as COMPLETED (demo helper)."""
+    db = get_db()
+    oid = _parse_object_id(order_id, field_name="order_id")
+
+    order = await db.orders.find_one({"_id": oid})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if order.get("status") == "COMPLETED":
+        return {"success": True, "message": "Order already completed"}
+
+    await db.orders.update_one(
+        {"_id": oid},
+        {"$set": {"status": "COMPLETED", "updated_at": __import__("datetime").datetime.utcnow().isoformat()}},
+    )
+
+    # Optional: if drone is attached, free it up (best-effort)
+    drone_id = order.get("drone_id")
+    if isinstance(drone_id, str):
+        try:
+            did = _parse_object_id(drone_id, field_name="drone_id")
+            await db.drones.update_one({"_id": did}, {"$set": {"status": "AVAILABLE"}})
+        except HTTPException:
+            pass
+
+    updated = await db.orders.find_one({"_id": oid})
+    return {"success": True, "message": "Order delivered successfully", "order": _serialize_mongo_doc(updated)}
 
 
 @router.get("/customer/{customer_id}/orders")
@@ -289,25 +348,85 @@ async def update_order_status_route(order_id: str, status: str):
 
 
 @router.post("/restaurant/orders/{order_id}/assign-drone")
-async def assign_drone_to_order(order_id: str, drone_id: str):
-    """Assign drone to order and start delivery"""
-    try:
-        # Assign drone
-        order = await order_service.assign_drone(order_id, drone_id)
-        
-        # Update drone status
-        await drone_service.update_drone_status(drone_id, "BUSY")
-        
-        # Update order to DELIVERING
-        order = await order_service.update_order_status(order_id, "DELIVERING")
-        
-        return JSONResponse({
-            "success": True,
-            "order": order,
-            "message": "🚁 Drone assigned - Delivery started"
-        })
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+async def assign_drone_to_order_legacy(order_id: str, drone_id: str):
+    """Legacy endpoint (kept for backward compatibility).
+
+    Prefer POST /orders/{order_id}/assign-drone with JSON body.
+    """
+    return await assign_drone_to_order(order_id, AssignDroneToOrderRequest(drone_id=drone_id))
+
+
+@router.post("/orders/{order_id}/assign-drone")
+async def assign_drone_to_order(order_id: str, payload: AssignDroneToOrderRequest):
+    """Restaurant assigns a drone to an order (READY_FOR_PICKUP -> DELIVERING)."""
+    db = get_db()
+
+    oid = _parse_object_id(order_id, field_name="order_id")
+    did = _parse_object_id(payload.drone_id, field_name="drone_id")
+
+    order = await db.orders.find_one({"_id": oid})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if order.get("status") != "READY_FOR_PICKUP":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Order must be READY_FOR_PICKUP to assign a drone (current: {order.get('status')})",
+        )
+
+    drone = await db.drones.find_one({"_id": did})
+    if not drone:
+        raise HTTPException(status_code=404, detail="Drone not found")
+
+    drone_status = drone.get("status")
+    if drone_status == "IDLE":
+        drone_status = "AVAILABLE"
+    if drone_status != "AVAILABLE":
+        raise HTTPException(status_code=409, detail=f"Drone is not available (current: {drone.get('status')})")
+
+    # Ensure drone is assigned to the same restaurant as the order
+    if str(drone.get("restaurant_id") or "") != str(order.get("restaurant_id") or ""):
+        raise HTTPException(status_code=409, detail="Drone does not belong to this restaurant")
+
+    # Update order + drone
+    await db.orders.update_one(
+        {"_id": oid},
+        {
+            "$set": {
+                "drone_id": str(did),
+                "drone_name": drone.get("name", ""),
+                "status": "DELIVERING",
+            }
+        },
+    )
+    await db.drones.update_one({"_id": did}, {"$set": {"status": "BUSY"}})
+
+    updated_order = await db.orders.find_one({"_id": oid})
+    updated_drone = await db.drones.find_one({"_id": did})
+
+    return {
+        "success": True,
+        "order": _serialize_mongo_doc(updated_order),
+        "drone": drone_service._serialize_drone(updated_drone),
+        "message": "🚁 Drone assigned - Delivery started",
+    }
+
+
+@router.get("/restaurant/{restaurant_id}/drones")
+async def get_available_drones_for_restaurant(restaurant_id: str):
+    """Restaurant fetches AVAILABLE drones assigned to them."""
+    db = get_db()
+    rid = _parse_object_id(restaurant_id, field_name="restaurant_id")
+
+    # Only drones assigned to this restaurant and currently available.
+    drones = await db.drones.find(
+        {
+            "restaurant_id": str(rid),
+            "status": {"$in": ["AVAILABLE", "IDLE"]},
+        }
+    ).to_list(None)
+
+    return [drone_service._serialize_drone(d) for d in drones]
 
 
 # ============= ADMIN ROUTES =============
@@ -383,6 +502,29 @@ async def create_drone(drone: Drone):
         })
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/admin/assign-drone")
+async def admin_assign_drone(payload: AdminAssignDroneRequest):
+    """Admin assigns a drone to a restaurant (sets drone.restaurant_id)."""
+    db = get_db()
+    did = _parse_object_id(payload.drone_id, field_name="drone_id")
+    rid = _parse_object_id(payload.restaurant_id, field_name="restaurant_id")
+
+    restaurant = await db.restaurants.find_one({"_id": rid})
+    if not restaurant:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+
+    drone = await db.drones.find_one({"_id": did})
+    if not drone:
+        raise HTTPException(status_code=404, detail="Drone not found")
+
+    await db.drones.update_one(
+        {"_id": did},
+        {"$set": {"restaurant_id": str(rid), "status": "AVAILABLE"}},
+    )
+    updated_drone = await db.drones.find_one({"_id": did})
+    return {"success": True, "drone": drone_service._serialize_drone(updated_drone)}
 
 
 @router.get("/admin/drones")

@@ -17,16 +17,20 @@ class DroneService:
         serialized = {k: v for k, v in drone.items() if k != "_id"}
         if drone_id is not None:
             serialized["id"] = str(drone_id)
+
+        # Backward-compat: older records may have status=IDLE
+        if serialized.get("status") == "IDLE":
+            serialized["status"] = "AVAILABLE"
         return serialized
 
-    async def create_drone(self, name: str, restaurant_id: str) -> dict:
+    async def create_drone(self, name: str, restaurant_id: str | None = None) -> dict:
         """Create a new drone"""
         db = get_db()
         
         drone_doc = {
             "name": name,
             "restaurant_id": restaurant_id,
-            "status": "IDLE",
+            "status": "AVAILABLE",
             "latitude": 10.762622,
             "longitude": 106.660172,
             "created_at": datetime.utcnow().isoformat()
@@ -115,5 +119,5 @@ class DroneService:
         # Mark drone as idle
         await db.drones.update_one(
             {"_id": ObjectId(drone_id)},
-            {"$set": {"status": "IDLE"}}
+            {"$set": {"status": "AVAILABLE"}}
         )
