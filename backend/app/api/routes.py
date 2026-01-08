@@ -279,26 +279,31 @@ async def create_restaurant(restaurant: Restaurant):
         rest_doc = {
             "name": restaurant.name,
             "owner_id": restaurant.owner_id,
-            "description": restaurant.description,
-            "address": restaurant.address,
-            "phone": restaurant.phone,
-            "created_at": restaurant.created_at
+            "description": restaurant.description if restaurant.description else "",
+            "address": restaurant.address if restaurant.address else "",
+            "phone": restaurant.phone if restaurant.phone else "",
+            "created_at": restaurant.created_at if restaurant.created_at else ""
         }
         result = await db.restaurants.insert_one(rest_doc)
         
-        # Create restaurant owner user if not exists
-        await db.users.update_one(
-            {"_id": ObjectId(restaurant.owner_id)},
-            {"$set": {"restaurant_id": str(result.inserted_id)}},
-            upsert=False
-        )
+        # Update user's restaurant_id if owner exists
+        try:
+            await db.users.update_one(
+                {"_id": ObjectId(restaurant.owner_id)},
+                {"$set": {"restaurant_id": str(result.inserted_id)}},
+                upsert=False
+            )
+        except Exception as user_error:
+            # Owner might not exist yet, continue anyway
+            print(f"Warning: Could not update user {restaurant.owner_id}: {user_error}")
         
         return JSONResponse({
             "success": True,
             "restaurant": {"id": str(result.inserted_id), **rest_doc}
         })
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        print(f"Error creating restaurant: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to create restaurant: {str(e)}")
 
 
 @router.get("/admin/restaurants")
@@ -308,11 +313,23 @@ async def get_all_restaurants():
         db = get_db()
         restaurants = await db.restaurants.find().to_list(None)
         return [
-            {"id": str(r["_id"]), **r}
+            {
+                "id": str(r["_id"]),
+                "name": r.get("name", ""),
+                "owner_id": r.get("owner_id", ""),
+                "description": r.get("description", ""),
+                "address": r.get("address", ""),
+                "phone": r.get("phone", ""),
+                "created_at": r.get("created_at", "")
+            }
             for r in restaurants
         ]
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        print(f"❌ Error fetching restaurants: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error fetching restaurants: {str(e)}")
+
 
 
 @router.post("/admin/drones")

@@ -54,15 +54,7 @@ function AdminDashboard() {
     }
 
     try {
-      await api.post(
-        "/admin/restaurants",
-        null,
-        {
-          params: {
-            restaurant: JSON.stringify(newRestaurant),
-          },
-        }
-      );
+      await api.post("/admin/restaurants", newRestaurant);
       setNewRestaurant({ name: "", owner_id: "", description: "" });
       await fetchAllData();
       alert("✅ Restaurant created!");
@@ -78,15 +70,7 @@ function AdminDashboard() {
     }
 
     try {
-      await api.post(
-        "/admin/drones",
-        null,
-        {
-          params: {
-            drone: JSON.stringify(newDrone),
-          },
-        }
-      );
+      await api.post("/admin/drones", newDrone);
       setNewDrone({ name: "", restaurant_id: "" });
       await fetchAllData();
       alert("✅ Drone created!");

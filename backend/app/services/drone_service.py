@@ -9,6 +9,16 @@ import asyncio
 class DroneService:
     """Service for drone operations and fake movement"""
 
+    def _serialize_drone(self, drone: dict) -> dict:
+        if not drone:
+            return drone
+
+        drone_id = drone.get("_id")
+        serialized = {k: v for k, v in drone.items() if k != "_id"}
+        if drone_id is not None:
+            serialized["id"] = str(drone_id)
+        return serialized
+
     async def create_drone(self, name: str, restaurant_id: str) -> dict:
         """Create a new drone"""
         db = get_db()
@@ -36,30 +46,21 @@ class DroneService:
         if not drone:
             return None
         
-        return {
-            "id": str(drone["_id"]),
-            **drone
-        }
+        return self._serialize_drone(drone)
 
     async def get_restaurant_drones(self, restaurant_id: str) -> List[dict]:
         """Get all drones for a restaurant"""
         db = get_db()
         drones = await db.drones.find({"restaurant_id": restaurant_id}).to_list(None)
         
-        return [
-            {"id": str(drone["_id"]), **drone}
-            for drone in drones
-        ]
+        return [self._serialize_drone(drone) for drone in drones]
 
     async def get_all_drones(self) -> List[dict]:
         """Get all drones (ADMIN)"""
         db = get_db()
         drones = await db.drones.find().to_list(None)
         
-        return [
-            {"id": str(drone["_id"]), **drone}
-            for drone in drones
-        ]
+        return [self._serialize_drone(drone) for drone in drones]
 
     async def update_drone_status(self, drone_id: str, status: str) -> dict:
         """Update drone status"""

@@ -30,4 +30,6 @@ async def close_db():
 
 def get_db() -> AsyncIOMotorDatabase:
     """Get the MongoDB database instance"""
+    if db is None:
+        raise RuntimeError("Database not initialized. Make sure the app startup event has completed.")
     return db
