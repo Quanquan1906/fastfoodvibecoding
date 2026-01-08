@@ -1,5 +1,6 @@
 """All API routes for FastFood delivery system"""
 from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect, BackgroundTasks
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from app.models.user import User, LoginRequest
 from app.models.restaurant import Restaurant
@@ -13,10 +14,40 @@ from app.services.drone_service import DroneService
 from app.core.database import get_db
 from app.websocket.manager import manager
 from bson import ObjectId
-from typing import List
+from bson.errors import InvalidId
+from typing import Any, Dict, List
 import asyncio
 
 router = APIRouter()
+
+
+def _parse_object_id(value: str, *, field_name: str) -> ObjectId:
+    """Parse a MongoDB ObjectId from a string.
+
+    Raises:
+        HTTPException(400): if the value is not a valid ObjectId.
+    """
+    try:
+        return ObjectId(value)
+    except (InvalidId, TypeError):
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name}")
+
+
+def _serialize_mongo_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert MongoDB document to JSON-serializable dict.
+
+    - Moves `_id` -> `id` (string)
+    - Stringifies any nested ObjectIds we commonly store (e.g., restaurant_id)
+    """
+    out: Dict[str, Any] = dict(doc)
+
+    if "_id" in out:
+        out["id"] = str(out.pop("_id"))
+
+    if isinstance(out.get("restaurant_id"), ObjectId):
+        out["restaurant_id"] = str(out["restaurant_id"])
+
+    return out
 
 # Service instances
 auth_service = AuthService()
@@ -43,42 +74,40 @@ async def login(request: LoginRequest):
 @router.get("/restaurants")
 async def get_restaurants():
     """Get all restaurants"""
-    try:
-        db = get_db()
-        restaurants = await db.restaurants.find().to_list(None)
-        return [
-            {"id": str(r["_id"]), **r}
-            for r in restaurants
-        ]
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    db = get_db()
+    restaurants = await db.restaurants.find().to_list(None)
+    return [_serialize_mongo_doc(r) for r in restaurants]
 
 
 @router.get("/restaurants/{restaurant_id}")
 async def get_restaurant(restaurant_id: str):
     """Get restaurant details"""
-    try:
-        db = get_db()
-        restaurant = await db.restaurants.find_one({"_id": ObjectId(restaurant_id)})
-        if not restaurant:
-            raise HTTPException(status_code=404, detail="Restaurant not found")
-        return {"id": str(restaurant["_id"]), **restaurant}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    db = get_db()
+
+    rid = _parse_object_id(restaurant_id, field_name="restaurant_id")
+    restaurant = await db.restaurants.find_one({"_id": rid})
+    if not restaurant:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+
+    return _serialize_mongo_doc(restaurant)
 
 
 @router.get("/restaurants/{restaurant_id}/menu")
 async def get_restaurant_menu(restaurant_id: str):
     """Get menu items for restaurant"""
-    try:
-        db = get_db()
-        items = await db.menu_items.find({"restaurant_id": restaurant_id}).to_list(None)
-        return [
-            {"id": str(item["_id"]), **item}
-            for item in items
-        ]
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    db = get_db()
+
+    rid = _parse_object_id(restaurant_id, field_name="restaurant_id")
+
+    # Restaurant must exist
+    restaurant = await db.restaurants.find_one({"_id": rid})
+    if not restaurant:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+
+    # Support both legacy string storage and newer ObjectId storage for restaurant_id
+    cursor = db.menu_items.find({"restaurant_id": {"$in": [rid, str(rid)]}})
+    items = await cursor.to_list(None)
+    return [_serialize_mongo_doc(item) for item in items]
 
 
 @router.post("/orders")
@@ -164,52 +193,63 @@ async def websocket_order_tracking(order_id: str, websocket: WebSocket):
 
 # ============= RESTAURANT ROUTES =============
 @router.post("/restaurant/menu")
-async def create_menu_item(restaurant_id: str, item: MenuItem):
+async def create_menu_item(item: MenuItem, restaurant_id: str | None = None):
     """Create menu item"""
-    try:
-        db = get_db()
-        menu_item = {
-            "restaurant_id": restaurant_id,
-            "name": item.name,
-            "description": item.description,
-            "price": item.price,
-            "image_url": item.image_url,
-            "available": item.available,
-            "created_at": item.created_at
-        }
-        result = await db.menu_items.insert_one(menu_item)
-        return JSONResponse({
-            "success": True,
-            "item": {"id": str(result.inserted_id), **menu_item}
-        })
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    db = get_db()
+
+    effective_restaurant_id = restaurant_id or item.restaurant_id
+    if not effective_restaurant_id:
+        raise HTTPException(status_code=422, detail="restaurant_id is required")
+
+    rid = _parse_object_id(effective_restaurant_id, field_name="restaurant_id")
+
+    restaurant = await db.restaurants.find_one({"_id": rid})
+    if not restaurant:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+
+    menu_item = {
+        "restaurant_id": rid,
+        "name": item.name,
+        "description": item.description,
+        "price": item.price,
+        "image_url": item.image_url,
+        "available": item.available,
+        "created_at": item.created_at,
+    }
+
+    result = await db.menu_items.insert_one(menu_item)
+    menu_item["_id"] = result.inserted_id
+
+    return {"success": True, "item": _serialize_mongo_doc(menu_item)}
 
 
 @router.put("/restaurant/menu/{item_id}")
 async def update_menu_item(item_id: str, item: MenuItem):
     """Update menu item"""
-    try:
-        db = get_db()
-        await db.menu_items.update_one(
-            {"_id": ObjectId(item_id)},
-            {"$set": item.dict(exclude={"id"})}
-        )
-        updated = await db.menu_items.find_one({"_id": ObjectId(item_id)})
-        return {"id": str(updated["_id"]), **updated}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    db = get_db()
+    oid = _parse_object_id(item_id, field_name="item_id")
+
+    update_doc = item.dict(exclude={"id"})
+    # Keep restaurant_id type consistent if client sends it
+    if "restaurant_id" in update_doc and update_doc["restaurant_id"]:
+        update_doc["restaurant_id"] = _parse_object_id(update_doc["restaurant_id"], field_name="restaurant_id")
+
+    await db.menu_items.update_one({"_id": oid}, {"$set": update_doc})
+    updated = await db.menu_items.find_one({"_id": oid})
+    if not updated:
+        raise HTTPException(status_code=404, detail="Menu item not found")
+    return _serialize_mongo_doc(updated)
 
 
 @router.delete("/restaurant/menu/{item_id}")
 async def delete_menu_item(item_id: str):
     """Delete menu item"""
-    try:
-        db = get_db()
-        await db.menu_items.delete_one({"_id": ObjectId(item_id)})
-        return JSONResponse({"success": True, "message": "Menu item deleted"})
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    db = get_db()
+    oid = _parse_object_id(item_id, field_name="item_id")
+    result = await db.menu_items.delete_one({"_id": oid})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Menu item not found")
+    return {"success": True, "message": "Menu item deleted"}
 
 
 @router.get("/restaurant/{restaurant_id}/orders")

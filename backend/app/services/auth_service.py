@@ -18,29 +18,42 @@ class AuthService:
             "role": request.role
         })
         
-        if user:
-            # Return existing user
-            return {
-                "id": str(user["_id"]),
-                "username": user["username"],
-                "role": user["role"],
-                "restaurant_id": user.get("restaurant_id")
-            }
-        else:
+        if not user:
             # Create new user
             new_user = {
                 "username": request.username,
                 "role": request.role,
-                "created_at": datetime.utcnow().isoformat()
+                "restaurant_id": None,
+                "created_at": datetime.utcnow().isoformat(),
             }
             result = await db.users.insert_one(new_user)
-            
-            return {
-                "id": str(result.inserted_id),
-                "username": request.username,
-                "role": request.role,
-                "restaurant_id": None
+            user = {"_id": result.inserted_id, **new_user}
+
+        # For RESTAURANT users, ensure they have a restaurant_id.
+        restaurant_id = user.get("restaurant_id")
+        if user.get("role") == "RESTAURANT" and not restaurant_id:
+            # Create a default restaurant owned by this user.
+            rest_doc = {
+                "name": f"{user['username']} Restaurant",
+                "owner_id": str(user["_id"]),
+                "description": "",
+                "address": "",
+                "phone": "",
+                "created_at": datetime.utcnow().isoformat(),
             }
+            rest_result = await db.restaurants.insert_one(rest_doc)
+            restaurant_id = str(rest_result.inserted_id)
+            await db.users.update_one(
+                {"_id": user["_id"]},
+                {"$set": {"restaurant_id": restaurant_id}},
+            )
+
+        return {
+            "id": str(user["_id"]),
+            "username": user["username"],
+            "role": user["role"],
+            "restaurant_id": restaurant_id,
+        }
 
     async def get_user(self, user_id: str) -> dict:
         """Get user by ID"""

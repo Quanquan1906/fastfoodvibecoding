@@ -13,6 +13,7 @@ function RestaurantDashboard() {
   const [orders, setOrders] = useState([]);
   const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
   const [newItem, setNewItem] = useState({
     name: "",
     description: "",
@@ -20,22 +21,46 @@ function RestaurantDashboard() {
   });
 
   useEffect(() => {
-    if (user.restaurant_id) {
-      fetchData();
+    if (!user || user.role !== "RESTAURANT") {
+      navigate("/", { replace: true });
+      return;
     }
-  }, [user.restaurant_id]);
+
+    if (!user.restaurant_id) {
+      setLoading(false);
+      return;
+    }
+
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.restaurant_id]);
 
   const fetchData = async () => {
     try {
+      setErrorMessage("");
       const [ordersRes, menuRes] = await Promise.all([
         api.get(`/restaurant/${user.restaurant_id}/orders`),
         api.get(`/restaurants/${user.restaurant_id}/menu`),
       ]);
-      setOrders(ordersRes.data);
-      setMenuItems(menuRes.data);
+
+      setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : []);
+      setMenuItems(Array.isArray(menuRes.data) ? menuRes.data : []);
       setLoading(false);
     } catch (error) {
       console.error("Error fetching data:", error);
+
+      if (error?.response) {
+        const status = error.response.status;
+        const detail = error.response.data?.detail;
+
+        if (status === 400) setErrorMessage(detail || "Bad request (400)");
+        else if (status === 404) setErrorMessage(detail || "Not found (404)");
+        else if (status >= 500) setErrorMessage("Backend error (500). Please try again.");
+        else setErrorMessage(detail || `Request failed (${status})`);
+      } else {
+        setErrorMessage("Network error: could not reach backend");
+      }
+
       setLoading(false);
     }
   };
@@ -47,27 +72,26 @@ function RestaurantDashboard() {
     }
 
     try {
-      await api.post(
-        "/restaurant/menu",
-        null,
-        {
-          params: {
-            restaurant_id: user.restaurant_id,
-            item: JSON.stringify({
-              name: newItem.name,
-              description: newItem.description,
-              price: parseFloat(newItem.price),
-              available: true,
-            }),
-          },
-        }
-      );
+      setErrorMessage("");
+      await api.post("/restaurant/menu", {
+        restaurant_id: user.restaurant_id,
+        name: newItem.name,
+        description: newItem.description,
+        price: parseFloat(newItem.price),
+        available: true,
+      });
 
       setNewItem({ name: "", description: "", price: "" });
       await fetchData();
       alert("✅ Menu item added!");
     } catch (error) {
-      alert("❌ Error adding item: " + error.message);
+      const status = error?.response?.status;
+      const detail = error?.response?.data?.detail;
+      if (status === 400 || status === 404) {
+        alert(`❌ ${detail || `Request failed (${status})`}`);
+      } else {
+        alert("❌ Error adding item: " + (detail || error.message));
+      }
     }
   };
 
@@ -104,6 +128,25 @@ function RestaurantDashboard() {
     return <div className="page-container"><p>⏳ Loading...</p></div>;
   }
 
+  if (!user.restaurant_id) {
+    return (
+      <div className="page-container">
+        <div className="header">
+          <h1>🏪 Restaurant Dashboard</h1>
+          <button onClick={handleLogout} className="btn btn-logout">
+            🚪 Logout
+          </button>
+        </div>
+        <p className="empty-state">
+          This restaurant account isn’t linked to a restaurant yet.
+        </p>
+        <p className="empty-state">
+          Please log out and log in again (it will auto-create one), or create a restaurant via the Admin dashboard.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="page-container">
       <div className="header">
@@ -112,6 +155,8 @@ function RestaurantDashboard() {
           🚪 Logout
         </button>
       </div>
+
+      {errorMessage ? <p className="empty-state">❌ {errorMessage}</p> : null}
 
       <div className="tabs">
         <button
