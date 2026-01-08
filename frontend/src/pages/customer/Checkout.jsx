@@ -1,0 +1,183 @@
+/**
+ * Customer Checkout - View Menu & Create Order
+ */
+import React, { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import api from "../../services/api";
+import "./Customer.css";
+
+function CustomerCheckout() {
+  const { restaurantId } = useParams();
+  const navigate = useNavigate();
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
+  const [restaurant, setRestaurant] = useState(null);
+  const [menuItems, setMenuItems] = useState([]);
+  const [cart, setCart] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [ordering, setOrdering] = useState(false);
+
+  useEffect(() => {
+    fetchRestaurantAndMenu();
+  }, [restaurantId]);
+
+  const fetchRestaurantAndMenu = async () => {
+    try {
+      const [restRes, menuRes] = await Promise.all([
+        api.get(`/restaurants/${restaurantId}`),
+        api.get(`/restaurants/${restaurantId}/menu`),
+      ]);
+      setRestaurant(restRes.data);
+      setMenuItems(menuRes.data);
+      setLoading(false);
+    } catch (error) {
+      console.error("Error fetching data:", error);
+      setLoading(false);
+    }
+  };
+
+  const addToCart = (item) => {
+    const existingItem = cart.find((ci) => ci.menu_item_id === item.id);
+    if (existingItem) {
+      setCart(
+        cart.map((ci) =>
+          ci.menu_item_id === item.id
+            ? { ...ci, quantity: ci.quantity + 1 }
+            : ci
+        )
+      );
+    } else {
+      setCart([
+        ...cart,
+        {
+          menu_item_id: item.id,
+          name: item.name,
+          price: item.price,
+          quantity: 1,
+        },
+      ]);
+    }
+  };
+
+  const removeFromCart = (itemId) => {
+    setCart(cart.filter((ci) => ci.menu_item_id !== itemId));
+  };
+
+  const calculateTotal = () => {
+    return cart.reduce((sum, item) => sum + item.price * item.quantity, 0).toFixed(2);
+  };
+
+  const handlePlaceOrder = async () => {
+    if (cart.length === 0) {
+      alert("❌ Please add items to your cart");
+      return;
+    }
+
+    setOrdering(true);
+    try {
+      const total = parseFloat(calculateTotal());
+      const response = await api.post(
+        "/orders",
+        null,
+        {
+          params: {
+            customer_id: user.id,
+            restaurant_id: restaurantId,
+            items: JSON.stringify(cart),
+            total: total,
+          },
+        }
+      );
+
+      if (response.data.success) {
+        const orderId = response.data.order.id;
+        navigate(`/customer/track/${orderId}`);
+      }
+    } catch (error) {
+      alert("❌ Error creating order: " + error.message);
+    } finally {
+      setOrdering(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="page-container"><p>⏳ Loading...</p></div>;
+  }
+
+  return (
+    <div className="page-container">
+      <div className="header">
+        <button onClick={() => navigate("/customer/home")} className="btn btn-back">
+          ← Back
+        </button>
+        <h1>📋 {restaurant?.name}</h1>
+      </div>
+
+      <div className="checkout-container">
+        <div className="menu-section">
+          <h2>Menu Items</h2>
+          <div className="menu-grid">
+            {menuItems.length === 0 ? (
+              <p>No items available</p>
+            ) : (
+              menuItems.map((item) => (
+                <div key={item.id} className="menu-item-card">
+                  <h4>{item.name}</h4>
+                  <p>{item.description}</p>
+                  <p className="price">💵 ${item.price.toFixed(2)}</p>
+                  <button
+                    onClick={() => addToCart(item)}
+                    className="btn btn-primary btn-small"
+                  >
+                    ➕ Add to Cart
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="cart-section">
+          <h2>🛒 Cart</h2>
+          {cart.length === 0 ? (
+            <p className="empty-state">Cart is empty</p>
+          ) : (
+            <>
+              <div className="cart-items">
+                {cart.map((item) => (
+                  <div key={item.menu_item_id} className="cart-item">
+                    <div>
+                      <p className="item-name">{item.name}</p>
+                      <p className="item-price">
+                        ${item.price.toFixed(2)} x {item.quantity}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => removeFromCart(item.menu_item_id)}
+                      className="btn btn-danger btn-small"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="cart-total">
+                <h3>Total: ${calculateTotal()}</h3>
+              </div>
+
+              <button
+                onClick={handlePlaceOrder}
+                disabled={ordering}
+                className="btn btn-primary btn-large"
+              >
+                {ordering ? "⏳ Placing Order..." : "✅ Place Order"}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default CustomerCheckout;

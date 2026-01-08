@@ -1,0 +1,231 @@
+/**
+ * Restaurant Dashboard
+ */
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import api from "../../services/api";
+import "./Restaurant.css";
+
+function RestaurantDashboard() {
+  const navigate = useNavigate();
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
+  const [activeTab, setActiveTab] = useState("orders");
+  const [orders, setOrders] = useState([]);
+  const [menuItems, setMenuItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [newItem, setNewItem] = useState({
+    name: "",
+    description: "",
+    price: "",
+  });
+
+  useEffect(() => {
+    if (user.restaurant_id) {
+      fetchData();
+    }
+  }, [user.restaurant_id]);
+
+  const fetchData = async () => {
+    try {
+      const [ordersRes, menuRes] = await Promise.all([
+        api.get(`/restaurant/${user.restaurant_id}/orders`),
+        api.get(`/restaurants/${user.restaurant_id}/menu`),
+      ]);
+      setOrders(ordersRes.data);
+      setMenuItems(menuRes.data);
+      setLoading(false);
+    } catch (error) {
+      console.error("Error fetching data:", error);
+      setLoading(false);
+    }
+  };
+
+  const handleAddMenuItem = async () => {
+    if (!newItem.name || !newItem.price) {
+      alert("❌ Please fill in name and price");
+      return;
+    }
+
+    try {
+      await api.post(
+        "/restaurant/menu",
+        null,
+        {
+          params: {
+            restaurant_id: user.restaurant_id,
+            item: JSON.stringify({
+              name: newItem.name,
+              description: newItem.description,
+              price: parseFloat(newItem.price),
+              available: true,
+            }),
+          },
+        }
+      );
+
+      setNewItem({ name: "", description: "", price: "" });
+      await fetchData();
+      alert("✅ Menu item added!");
+    } catch (error) {
+      alert("❌ Error adding item: " + error.message);
+    }
+  };
+
+  const handleAcceptOrder = async (orderId) => {
+    try {
+      await api.post(`/restaurant/orders/${orderId}/accept`);
+      await fetchData();
+      alert("✅ Order accepted!");
+    } catch (error) {
+      alert("❌ Error: " + error.message);
+    }
+  };
+
+  const handleUpdateStatus = async (orderId, status) => {
+    try {
+      const response = await api.post(
+        `/restaurant/orders/${orderId}/status`,
+        null,
+        { params: { status } }
+      );
+      await fetchData();
+      alert(`✅ Status updated to ${status}`);
+    } catch (error) {
+      alert("❌ Error: " + error.message);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("user");
+    navigate("/");
+  };
+
+  if (loading) {
+    return <div className="page-container"><p>⏳ Loading...</p></div>;
+  }
+
+  return (
+    <div className="page-container">
+      <div className="header">
+        <h1>🏪 Restaurant Dashboard</h1>
+        <button onClick={handleLogout} className="btn btn-logout">
+          🚪 Logout
+        </button>
+      </div>
+
+      <div className="tabs">
+        <button
+          className={`tab ${activeTab === "orders" ? "active" : ""}`}
+          onClick={() => setActiveTab("orders")}
+        >
+          📋 Orders
+        </button>
+        <button
+          className={`tab ${activeTab === "menu" ? "active" : ""}`}
+          onClick={() => setActiveTab("menu")}
+        >
+          🍽️ Menu
+        </button>
+      </div>
+
+      <div className="content">
+        {activeTab === "orders" ? (
+          <div>
+            <h2>Incoming Orders</h2>
+            {orders.length === 0 ? (
+              <p className="empty-state">No orders yet</p>
+            ) : (
+              <div className="orders-table">
+                {orders.map((order) => (
+                  <div key={order.id} className="order-row">
+                    <div>
+                      <h4>Order #{order.id?.substring(0, 8)}</h4>
+                      <p className="status">{order.status}</p>
+                      <p>Total: ${order.total?.toFixed(2)}</p>
+                      <p>Items: {order.items?.length}</p>
+                    </div>
+                    <div className="actions">
+                      {order.status === "PENDING" && (
+                        <button
+                          onClick={() => handleAcceptOrder(order.id)}
+                          className="btn btn-success"
+                        >
+                          ✅ Accept
+                        </button>
+                      )}
+                      {order.status === "PREPARING" && (
+                        <button
+                          onClick={() => handleUpdateStatus(order.id, "READY_FOR_PICKUP")}
+                          className="btn btn-primary"
+                        >
+                          📦 Ready
+                        </button>
+                      )}
+                      {order.status === "READY_FOR_PICKUP" && (
+                        <p className="info">⏳ Waiting for drone assignment...</p>
+                      )}
+                      {order.status === "DELIVERING" && (
+                        <p className="info">🚁 On delivery...</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>
+            <h2>Manage Menu</h2>
+
+            <div className="add-item-form">
+              <h3>Add New Item</h3>
+              <input
+                type="text"
+                placeholder="Item name"
+                value={newItem.name}
+                onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
+              />
+              <input
+                type="text"
+                placeholder="Description"
+                value={newItem.description}
+                onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
+              />
+              <input
+                type="number"
+                placeholder="Price"
+                step="0.01"
+                value={newItem.price}
+                onChange={(e) => setNewItem({ ...newItem, price: e.target.value })}
+              />
+              <button onClick={handleAddMenuItem} className="btn btn-primary">
+                ➕ Add Item
+              </button>
+            </div>
+
+            <div className="menu-list">
+              <h3>Current Menu</h3>
+              {menuItems.length === 0 ? (
+                <p className="empty-state">No items yet</p>
+              ) : (
+                <div className="menu-items">
+                  {menuItems.map((item) => (
+                    <div key={item.id} className="menu-list-item">
+                      <div>
+                        <h4>{item.name}</h4>
+                        <p>{item.description}</p>
+                        <p className="price">${item.price?.toFixed(2)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default RestaurantDashboard;

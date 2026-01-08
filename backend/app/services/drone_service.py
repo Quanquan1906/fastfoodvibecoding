@@ -1,0 +1,118 @@
+"""Drone management and fake movement service"""
+from app.core.database import get_db
+from bson import ObjectId
+from datetime import datetime
+from typing import Optional, List
+import asyncio
+
+
+class DroneService:
+    """Service for drone operations and fake movement"""
+
+    async def create_drone(self, name: str, restaurant_id: str) -> dict:
+        """Create a new drone"""
+        db = get_db()
+        
+        drone_doc = {
+            "name": name,
+            "restaurant_id": restaurant_id,
+            "status": "IDLE",
+            "latitude": 10.762622,
+            "longitude": 106.660172,
+            "created_at": datetime.utcnow().isoformat()
+        }
+        
+        result = await db.drones.insert_one(drone_doc)
+        return {
+            "id": str(result.inserted_id),
+            **drone_doc
+        }
+
+    async def get_drone(self, drone_id: str) -> Optional[dict]:
+        """Get drone by ID"""
+        db = get_db()
+        drone = await db.drones.find_one({"_id": ObjectId(drone_id)})
+        
+        if not drone:
+            return None
+        
+        return {
+            "id": str(drone["_id"]),
+            **drone
+        }
+
+    async def get_restaurant_drones(self, restaurant_id: str) -> List[dict]:
+        """Get all drones for a restaurant"""
+        db = get_db()
+        drones = await db.drones.find({"restaurant_id": restaurant_id}).to_list(None)
+        
+        return [
+            {"id": str(drone["_id"]), **drone}
+            for drone in drones
+        ]
+
+    async def get_all_drones(self) -> List[dict]:
+        """Get all drones (ADMIN)"""
+        db = get_db()
+        drones = await db.drones.find().to_list(None)
+        
+        return [
+            {"id": str(drone["_id"]), **drone}
+            for drone in drones
+        ]
+
+    async def update_drone_status(self, drone_id: str, status: str) -> dict:
+        """Update drone status"""
+        db = get_db()
+        
+        await db.drones.update_one(
+            {"_id": ObjectId(drone_id)},
+            {"$set": {"status": status}}
+        )
+        
+        return await self.get_drone(drone_id)
+
+    async def simulate_drone_movement(self, order_id: str, drone_id: str):
+        """Simulate fake drone movement for delivery"""
+        db = get_db()
+        
+        # Simulate 20 steps of movement
+        for step in range(20):
+            # Get current order
+            order = await db.orders.find_one({"_id": ObjectId(order_id)})
+            if not order or order.get("status") != "DELIVERING":
+                break
+            
+            # Update drone position
+            new_lat = order["drone_lat"] + 0.0005
+            new_lon = order["drone_lon"] + 0.0005
+            
+            await db.orders.update_one(
+                {"_id": ObjectId(order_id)},
+                {
+                    "$set": {
+                        "drone_lat": new_lat,
+                        "drone_lon": new_lon,
+                        "updated_at": datetime.utcnow().isoformat()
+                    }
+                }
+            )
+            
+            await asyncio.sleep(2)  # Move every 2 seconds
+        
+        # Mark order as completed
+        await db.orders.update_one(
+            {"_id": ObjectId(order_id)},
+            {
+                "$set": {
+                    "status": "COMPLETED",
+                    "updated_at": datetime.utcnow().isoformat()
+                }
+            }
+        )
+        
+        # Mark drone as idle
+        await db.drones.update_one(
+            {"_id": ObjectId(drone_id)},
+            {"$set": {"status": "IDLE"}}
+        )
