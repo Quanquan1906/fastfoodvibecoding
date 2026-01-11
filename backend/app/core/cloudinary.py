@@ -74,3 +74,34 @@ async def upload_menu_item_image(file_obj, filename: str) -> str:
         raise RuntimeError("Cloudinary upload did not return a URL")
 
     return str(url)
+
+
+async def upload_restaurant_image(file_obj, filename: str) -> str:
+    """Upload a restaurant image to Cloudinary and return the secure URL."""
+
+    _configure_cloudinary_from_env()
+
+    def _upload_sync() -> Dict[str, Any]:
+        return cloudinary.uploader.upload(
+            file_obj,
+            folder="fastfood/restaurants",
+            resource_type="image",
+            use_filename=True,
+            unique_filename=True,
+            overwrite=False,
+        )
+
+    try:
+        result = await run_in_threadpool(_upload_sync)
+    except CloudinaryNotConfiguredError:
+        raise
+    except CloudinaryError as e:
+        raise RuntimeError(f"Cloudinary upload failed: {e}") from e
+    except Exception as e:
+        raise RuntimeError(f"Cloudinary upload failed: {e}") from e
+
+    url = result.get("secure_url") or result.get("url")
+    if not url:
+        raise RuntimeError("Cloudinary upload did not return a URL")
+
+    return str(url)

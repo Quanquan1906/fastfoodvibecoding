@@ -13,6 +13,7 @@ function CustomerCheckout() {
   const [restaurant, setRestaurant] = useState(null);
   const [menuItems, setMenuItems] = useState([]);
   const [cart, setCart] = useState([]);
+  const [deliveryAddress, setDeliveryAddress] = useState("");
   const [loading, setLoading] = useState(true);
   const [ordering, setOrdering] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -38,14 +39,14 @@ function CustomerCheckout() {
   }, [restaurantId]);
 
   useEffect(() => {
-    if (!user?.id) {
-      navigate("/login", { replace: true });
-      return;
-    }
     fetchRestaurantAndMenu();
-  }, [fetchRestaurantAndMenu, navigate, user?.id]);
+  }, [fetchRestaurantAndMenu]);
 
   const addToCart = (item) => {
+    if (!user?.id) {
+      alert("You have to sign in first");
+      return;
+    }
     const existingItem = cart.find((ci) => ci.menu_item_id === item.id);
     if (existingItem) {
       setCart(
@@ -87,6 +88,11 @@ function CustomerCheckout() {
       return;
     }
 
+    if (!deliveryAddress.trim()) {
+      alert("❌ Please enter a delivery address");
+      return;
+    }
+
     setOrdering(true);
     try {
       const total = Number(calculateTotal().toFixed(2));
@@ -100,6 +106,7 @@ function CustomerCheckout() {
           quantity: Number(ci.quantity),
         })),
         total_price: total,
+        delivery_address: deliveryAddress.trim(),
       });
 
       if (response.data.success) {
@@ -196,6 +203,26 @@ function CustomerCheckout() {
 
               <div className="cart-total">
                 <h3>Total: ${calculateTotal().toFixed(2)}</h3>
+              </div>
+
+              <div className="address-input-container" style={{ marginBottom: "16px" }}>
+                <label style={{ display: "block", marginBottom: "8px", fontWeight: "bold" }}>
+                  📍 Delivery Address
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter your delivery address"
+                  value={deliveryAddress}
+                  onChange={(e) => setDeliveryAddress(e.target.value)}
+                  className="input-field"
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    border: "1px solid #ddd",
+                    borderRadius: "6px",
+                    fontSize: "16px",
+                  }}
+                />
               </div>
 
               <button

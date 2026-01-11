@@ -206,6 +206,9 @@ function CustomerTrackOrder() {
               ))}
             </ul>
             <h3>Total: ${order.total?.toFixed(2)}</h3>
+            {order.delivery_address && (
+              <h3>📍 Delivery Address: {order.delivery_address}</h3>
+            )}
           </div>
 
           {order.status === "PENDING" && !paymentDone && (

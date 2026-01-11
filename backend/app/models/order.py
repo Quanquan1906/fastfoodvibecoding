@@ -17,6 +17,7 @@ class OrderCreate(BaseModel):
     restaurant_id: str
     items: List[OrderItem] = Field(..., min_length=1)
     total_price: float = Field(..., ge=0)
+    delivery_address: str = Field(..., min_length=1)
 
     model_config = ConfigDict(
         extra="forbid",
@@ -28,6 +29,7 @@ class OrderCreate(BaseModel):
                     {"menu_item_id": "item_1", "name": "Pizza", "price": 12.99, "quantity": 1}
                 ],
                 "total_price": 12.99,
+                "delivery_address": "123 Main St, City"
             }
         },
     )
@@ -50,6 +52,7 @@ class Order(BaseModel):
     items: List[OrderItem]
     total: float
     status: str = "PENDING"  # PENDING | PREPARING | READY_FOR_PICKUP | DELIVERING | COMPLETED
+    delivery_address: Optional[str] = None
     delivery_lat: float = 10.762622
     delivery_lon: float = 106.660172
     drone_lat: float = 10.762622

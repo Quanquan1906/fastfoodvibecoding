@@ -16,7 +16,7 @@ class OrderService:
             out["id"] = str(out.pop("_id"))
         return out
 
-    async def create_order(self, customer_id: str, restaurant_id: str, items: List[OrderItem], total: float) -> dict:
+    async def create_order(self, customer_id: str, restaurant_id: str, items: List[OrderItem], total: float, delivery_address: str) -> dict:
         """Create a new order"""
         db = get_db()
 
@@ -34,6 +34,7 @@ class OrderService:
             "restaurant_id": restaurant_id,
             "items": serialized_items,
             "total": total,
+            "delivery_address": delivery_address,
             "status": "PENDING",
             "delivery_lat": 10.762622,
             "delivery_lon": 106.660172,

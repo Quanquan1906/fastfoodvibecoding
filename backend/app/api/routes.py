@@ -14,7 +14,7 @@ from app.services.order_service import OrderService
 from app.services.drone_service import DroneService
 from app.core.database import get_db
 from app.websocket.manager import manager
-from app.core.cloudinary import CloudinaryNotConfiguredError, upload_menu_item_image
+from app.core.cloudinary import CloudinaryNotConfiguredError, upload_menu_item_image, upload_restaurant_image
 from bson import ObjectId
 from bson.errors import InvalidId
 from pydantic import BaseModel, Field
@@ -87,11 +87,34 @@ async def login(request: LoginRequest):
 
 # ============= CUSTOMER ROUTES =============
 @router.get("/restaurants")
-async def get_restaurants():
-    """Get all restaurants"""
+async def get_restaurants(page: int = 1, limit: int = 6):
+    """Get paginated restaurants"""
     db = get_db()
-    restaurants = await db.restaurants.find().to_list(None)
-    return [_serialize_mongo_doc(r) for r in restaurants]
+    
+    # Validate pagination params
+    page = max(1, page)
+    limit = max(1, min(limit, 100))  # Cap limit at 100
+    
+    # Calculate skip
+    skip = (page - 1) * limit
+    
+    # Get total count
+    total = await db.restaurants.count_documents({})
+    
+    # Get paginated restaurants
+    cursor = db.restaurants.find().skip(skip).limit(limit)
+    restaurants = await cursor.to_list(None)
+    
+    # Calculate total pages
+    total_pages = (total + limit - 1) // limit  # Ceiling division
+    
+    return {
+        "data": [_serialize_mongo_doc(r) for r in restaurants],
+        "page": page,
+        "limit": limit,
+        "total": total,
+        "totalPages": total_pages
+    }
 
 
 @router.get("/restaurants/{restaurant_id}")
@@ -141,6 +164,7 @@ async def create_order(payload: OrderCreate):
             payload.restaurant_id,
             payload.items,
             payload.total_price,
+            payload.delivery_address,
         )
         response_payload = {"success": True, "order": order}
         return JSONResponse(
@@ -459,38 +483,66 @@ async def get_available_drones_for_restaurant(restaurant_id: str):
 
 # ============= ADMIN ROUTES =============
 @router.post("/admin/restaurants")
-async def create_restaurant(restaurant: Restaurant):
-    """Create restaurant"""
+async def create_restaurant(
+    name: str = Form(...),
+    owner_id: str = Form(...),
+    description: str | None = Form(None),
+    address: str | None = Form(None),
+    phone: str | None = Form(None),
+    image: UploadFile | None = File(None),
+):
+    """Create restaurant (multipart/form-data with image upload)."""
+    db = get_db()
+
+    if not name or not name.strip():
+        raise HTTPException(status_code=400, detail="name is required")
+    if not owner_id or not owner_id.strip():
+        raise HTTPException(status_code=400, detail="owner_id is required")
+    if image is None or not image.filename:
+        raise HTTPException(status_code=400, detail="image file is required")
+    if image.content_type and not image.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="image must be an image/* content type")
+
     try:
-        db = get_db()
-        rest_doc = {
-            "name": restaurant.name,
-            "owner_id": restaurant.owner_id,
-            "description": restaurant.description if restaurant.description else "",
-            "address": restaurant.address if restaurant.address else "",
-            "phone": restaurant.phone if restaurant.phone else "",
-            "created_at": restaurant.created_at if restaurant.created_at else ""
-        }
-        result = await db.restaurants.insert_one(rest_doc)
-        
-        # Update user's restaurant_id if owner exists
         try:
-            await db.users.update_one(
-                {"_id": ObjectId(restaurant.owner_id)},
-                {"$set": {"restaurant_id": str(result.inserted_id)}},
-                upsert=False
-            )
-        except Exception as user_error:
-            # Owner might not exist yet, continue anyway
-            print(f"Warning: Could not update user {restaurant.owner_id}: {user_error}")
-        
-        return JSONResponse({
-            "success": True,
-            "restaurant": {"id": str(result.inserted_id), **rest_doc}
-        })
+            image.file.seek(0)
+        except Exception:
+            pass
+        image_url = await upload_restaurant_image(image.file, filename=image.filename)
+    except CloudinaryNotConfiguredError as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        print(f"Error creating restaurant: {e}")
-        raise HTTPException(status_code=400, detail=f"Failed to create restaurant: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Upload failed: {e}")
+
+    rest_doc = {
+        "name": name,
+        "owner_id": owner_id,
+        "description": description or "",
+        "address": address or "",
+        "phone": phone or "",
+        "image_url": image_url,
+        "created_at": "",
+    }
+
+    try:
+        result = await db.restaurants.insert_one(rest_doc)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create restaurant: {e}")
+
+    # Update user's restaurant_id if owner exists (best effort)
+    try:
+        await db.users.update_one(
+            {"_id": ObjectId(owner_id)},
+            {"$set": {"restaurant_id": str(result.inserted_id)}},
+            upsert=False,
+        )
+    except Exception as user_error:
+        print(f"Warning: Could not update user {owner_id}: {user_error}")
+
+    response_payload = {"success": True, "restaurant": {"id": str(result.inserted_id), **rest_doc}}
+    return JSONResponse(
+        content=jsonable_encoder(response_payload, custom_encoder={ObjectId: str})
+    )
 
 
 @router.get("/admin/restaurants")
@@ -507,6 +559,7 @@ async def get_all_restaurants():
                 "description": r.get("description", ""),
                 "address": r.get("address", ""),
                 "phone": r.get("phone", ""),
+                "image_url": r.get("image_url", ""),
                 "created_at": r.get("created_at", "")
             }
             for r in restaurants

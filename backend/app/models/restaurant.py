@@ -10,6 +10,7 @@ class Restaurant(BaseModel):
     description: Optional[str] = None
     address: Optional[str] = None
     phone: Optional[str] = None
+    image_url: Optional[str] = None
     created_at: Optional[str] = None
 
     class Config:

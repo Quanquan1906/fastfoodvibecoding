@@ -19,7 +19,11 @@ function AdminDashboard() {
     name: "",
     owner_id: "",
     description: "",
+    address: "",
+    phone: "",
   });
+  const [newRestaurantImage, setNewRestaurantImage] = useState(null);
+  const [creatingRestaurant, setCreatingRestaurant] = useState(false);
   const [newDrone, setNewDrone] = useState({
     name: "",
     restaurant_id: "",
@@ -59,13 +63,34 @@ function AdminDashboard() {
       return;
     }
 
+    if (!newRestaurantImage) {
+      alert("❌ Please select an image");
+      return;
+    }
+
     try {
-      await api.post("/admin/restaurants", newRestaurant);
-      setNewRestaurant({ name: "", owner_id: "", description: "" });
+      setCreatingRestaurant(true);
+
+      const formData = new FormData();
+      formData.append("name", newRestaurant.name);
+      formData.append("owner_id", newRestaurant.owner_id);
+      formData.append("description", newRestaurant.description || "");
+      formData.append("address", newRestaurant.address || "");
+      formData.append("phone", newRestaurant.phone || "");
+      formData.append("image", newRestaurantImage);
+
+      await api.post("/admin/restaurants", formData);
+
+      setNewRestaurant({ name: "", owner_id: "", description: "", address: "", phone: "" });
+      setNewRestaurantImage(null);
       await fetchAllData();
       alert("✅ Restaurant created!");
     } catch (error) {
-      alert("❌ Error: " + error.message);
+      const status = error?.response?.status;
+      const detail = error?.response?.data?.detail;
+      alert(`❌ ${detail || (status ? `Request failed (${status})` : error.message)}`);
+    } finally {
+      setCreatingRestaurant(false);
     }
   };
 
@@ -155,8 +180,25 @@ function AdminDashboard() {
                 value={newRestaurant.description}
                 onChange={(e) => setNewRestaurant({ ...newRestaurant, description: e.target.value })}
               />
-              <button onClick={handleCreateRestaurant} className="btn btn-primary">
-                ➕ Create
+              <input
+                type="text"
+                placeholder="Address"
+                value={newRestaurant.address}
+                onChange={(e) => setNewRestaurant({ ...newRestaurant, address: e.target.value })}
+              />
+              <input
+                type="text"
+                placeholder="Phone"
+                value={newRestaurant.phone}
+                onChange={(e) => setNewRestaurant({ ...newRestaurant, phone: e.target.value })}
+              />
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setNewRestaurantImage(e.target.files?.[0] || null)}
+              />
+              <button onClick={handleCreateRestaurant} className="btn btn-primary" disabled={creatingRestaurant}>
+                {creatingRestaurant ? "⏳ Uploading..." : "➕ Create"}
               </button>
             </div>
 
@@ -168,6 +210,17 @@ function AdminDashboard() {
                 <div className="grid">
                   {restaurants.map((rest) => (
                     <div key={rest.id} className="item-card">
+                      {rest.image_url ? (
+                        <img
+                          className="admin-restaurant-image"
+                          src={rest.image_url}
+                          alt={rest.name}
+                          loading="lazy"
+                          onError={(e) => {
+                            e.currentTarget.style.display = "none";
+                          }}
+                        />
+                      ) : null}
                       <h4>{rest.name}</h4>
                       <p>Owner: {rest.owner_id?.substring(0, 8)}</p>
                       <p>{rest.description}</p>
