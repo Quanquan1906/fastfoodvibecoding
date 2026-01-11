@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7.0
+    container_name: fastfood-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: fastfood_db
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - fastfood-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend (FastAPI)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fastfood-backend
+    ports:
+      - "8000:8000"
+    environment:
+      MONGODB_URL: mongodb://mongodb:27017/fastfood_db
+      DATABASE_NAME: fastfood_db
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - fastfood-network
+    volumes:
+      - ./backend:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Frontend (React)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: fastfood-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - fastfood-network
+    environment:
+      REACT_APP_API_BASE_URL: http://backend:8000
+
+volumes:
+  mongodb_data:
+
+networks:
+  fastfood-network:
+    driver: bridge
