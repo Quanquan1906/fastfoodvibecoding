@@ -188,6 +188,15 @@
   transition: all 0.3s;
 }
 
+.menu-item-image {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  background: #eee;
+}
+
 .menu-item-card:hover {
   border-color: #667eea;
   box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);

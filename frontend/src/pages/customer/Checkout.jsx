@@ -15,9 +15,11 @@ function CustomerCheckout() {
   const [cart, setCart] = useState([]);
   const [loading, setLoading] = useState(true);
   const [ordering, setOrdering] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   const fetchRestaurantAndMenu = useCallback(async () => {
     try {
+      setErrorMessage("");
       const [restRes, menuRes] = await Promise.all([
         api.get(`/restaurants/${restaurantId}`),
         api.get(`/restaurants/${restaurantId}/menu`),
@@ -27,6 +29,10 @@ function CustomerCheckout() {
       setLoading(false);
     } catch (error) {
       console.error("Error fetching data:", error);
+      const status = error?.response?.status;
+      const detail = error?.response?.data?.detail;
+      if (status) setErrorMessage(detail || `Request failed (${status})`);
+      else setErrorMessage("Network error: could not reach backend");
       setLoading(false);
     }
   }, [restaurantId]);
@@ -126,12 +132,24 @@ function CustomerCheckout() {
       <div className="checkout-container">
         <div className="menu-section">
           <h2>Menu Items</h2>
+          {errorMessage ? <p className="empty-state">❌ {errorMessage}</p> : null}
           <div className="menu-grid">
             {menuItems.length === 0 ? (
               <p>No items available</p>
             ) : (
               menuItems.map((item) => (
                 <div key={item.id} className="menu-item-card">
+                  {item.image_url ? (
+                    <img
+                      className="menu-item-image"
+                      src={item.image_url}
+                      alt={item.name}
+                      loading="lazy"
+                      onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                      }}
+                    />
+                  ) : null}
                   <h4>{item.name}</h4>
                   <p>{item.description}</p>
                   <p className="price">💵 ${item.price.toFixed(2)}</p>

@@ -1,5 +1,6 @@
 """All API routes for FastFood delivery system"""
 from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect, BackgroundTasks
+from fastapi import File, Form, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from app.models.user import User, LoginRequest
@@ -13,6 +14,7 @@ from app.services.order_service import OrderService
 from app.services.drone_service import DroneService
 from app.core.database import get_db
 from app.websocket.manager import manager
+from app.core.cloudinary import CloudinaryNotConfiguredError, upload_menu_item_image
 from bson import ObjectId
 from bson.errors import InvalidId
 from pydantic import BaseModel, Field
@@ -252,28 +254,54 @@ async def websocket_order_tracking(order_id: str, websocket: WebSocket):
 
 # ============= RESTAURANT ROUTES =============
 @router.post("/restaurant/menu")
-async def create_menu_item(item: MenuItem, restaurant_id: str | None = None):
-    """Create menu item"""
+async def create_menu_item(
+    name: str = Form(...),
+    description: str | None = Form(None),
+    price: float = Form(...),
+    image: UploadFile | None = File(None),
+    restaurant_id: str | None = Form(None),
+):
+    """Create menu item (multipart/form-data with image upload)"""
     db = get_db()
 
-    effective_restaurant_id = restaurant_id or item.restaurant_id
-    if not effective_restaurant_id:
+    if image is None or not image.filename:
+        raise HTTPException(status_code=400, detail="image file is required")
+
+    if not restaurant_id:
         raise HTTPException(status_code=422, detail="restaurant_id is required")
 
-    rid = _parse_object_id(effective_restaurant_id, field_name="restaurant_id")
+    if image.content_type and not image.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="image must be an image/* content type")
+
+    rid = _parse_object_id(restaurant_id, field_name="restaurant_id")
 
     restaurant = await db.restaurants.find_one({"_id": rid})
     if not restaurant:
         raise HTTPException(status_code=404, detail="Restaurant not found")
 
+    try:
+        # Ensure the underlying stream is at the beginning.
+        try:
+            image.file.seek(0)
+        except Exception:
+            pass
+
+        image_url = await upload_menu_item_image(image.file, filename=image.filename)
+    except CloudinaryNotConfiguredError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Image upload failed: {e}")
+
     menu_item = {
         "restaurant_id": rid,
-        "name": item.name,
-        "description": item.description,
-        "price": item.price,
-        "image_url": item.image_url,
-        "available": item.available,
-        "created_at": item.created_at,
+        "name": name,
+        "description": description,
+        "price": price,
+        "image_url": image_url,
+        "available": True,
+        "created_at": None,
     }
 
     result = await db.menu_items.insert_one(menu_item)

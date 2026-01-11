@@ -14,6 +14,7 @@ function RestaurantDashboard() {
   const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [addingMenuItem, setAddingMenuItem] = useState(false);
   const [assigningOrderId, setAssigningOrderId] = useState(null);
   const [availableDrones, setAvailableDrones] = useState([]);
   const [selectedDroneId, setSelectedDroneId] = useState("");
@@ -23,6 +24,7 @@ function RestaurantDashboard() {
     description: "",
     price: "",
   });
+  const [newItemImage, setNewItemImage] = useState(null);
 
   useEffect(() => {
     if (!user || user.role !== "RESTAURANT") {
@@ -75,17 +77,27 @@ function RestaurantDashboard() {
       return;
     }
 
+    if (!newItemImage) {
+      alert("❌ Please select an image");
+      return;
+    }
+
     try {
       setErrorMessage("");
-      await api.post("/restaurant/menu", {
-        restaurant_id: user.restaurant_id,
-        name: newItem.name,
-        description: newItem.description,
-        price: parseFloat(newItem.price),
-        available: true,
-      });
+      setAddingMenuItem(true);
+
+      const formData = new FormData();
+      formData.append("restaurant_id", user.restaurant_id);
+      formData.append("name", newItem.name);
+      formData.append("description", newItem.description || "");
+      formData.append("price", String(parseFloat(newItem.price)));
+      formData.append("image", newItemImage);
+
+      // Do NOT set Content-Type manually; axios will add the correct boundary.
+      await api.post("/restaurant/menu", formData);
 
       setNewItem({ name: "", description: "", price: "" });
+      setNewItemImage(null);
       await fetchData();
       alert("✅ Menu item added!");
     } catch (error) {
@@ -96,6 +108,8 @@ function RestaurantDashboard() {
       } else {
         alert("❌ Error adding item: " + (detail || error.message));
       }
+    } finally {
+      setAddingMenuItem(false);
     }
   };
 
@@ -348,8 +362,13 @@ function RestaurantDashboard() {
                 value={newItem.price}
                 onChange={(e) => setNewItem({ ...newItem, price: e.target.value })}
               />
-              <button onClick={handleAddMenuItem} className="btn btn-primary">
-                ➕ Add Item
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setNewItemImage(e.target.files?.[0] || null)}
+              />
+              <button onClick={handleAddMenuItem} className="btn btn-primary" disabled={addingMenuItem}>
+                {addingMenuItem ? "⏳ Uploading..." : "➕ Add Item"}
               </button>
             </div>
 
@@ -361,6 +380,17 @@ function RestaurantDashboard() {
                 <div className="menu-items">
                   {menuItems.map((item) => (
                     <div key={item.id} className="menu-list-item">
+                      {item.image_url ? (
+                        <img
+                          className="menu-list-item-image"
+                          src={item.image_url}
+                          alt={item.name}
+                          loading="lazy"
+                          onError={(e) => {
+                            e.currentTarget.style.display = "none";
+                          }}
+                        />
+                      ) : null}
                       <div>
                         <h4>{item.name}</h4>
                         <p>{item.description}</p>
