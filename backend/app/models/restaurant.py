@@ -7,6 +7,7 @@ class Restaurant(BaseModel):
     id: Optional[str] = None
     name: str
     owner_id: str
+    owner_username: str  # Username of the restaurant owner
     description: Optional[str] = None
     address: Optional[str] = None
     phone: Optional[str] = None
@@ -18,6 +19,7 @@ class Restaurant(BaseModel):
             "example": {
                 "name": "Pizza Palace",
                 "owner_id": "owner_123",
+                "owner_username": "john_pizza",
                 "description": "Best pizza in town"
             }
         }

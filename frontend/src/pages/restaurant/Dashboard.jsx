@@ -9,6 +9,7 @@ import "./Restaurant.css";
 function RestaurantDashboard() {
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem("user") || "{}");
+  const [restaurant, setRestaurant] = useState(null);
   const [activeTab, setActiveTab] = useState("orders");
   const [orders, setOrders] = useState([]);
   const [menuItems, setMenuItems] = useState([]);
@@ -44,6 +45,33 @@ function RestaurantDashboard() {
   const fetchData = async () => {
     try {
       setErrorMessage("");
+      
+      // Fetch restaurant details with ownership check
+      const restaurantRes = await api.get(
+        `/restaurants/${user.restaurant_id}`,
+        { params: { username: user.username, role: user.role } }
+      );
+      
+      const restaurantData = restaurantRes.data;
+      
+      // Verify ownership with case-insensitive and trimmed comparison
+      const ownerUsername = restaurantData.owner_username?.trim().toLowerCase();
+      const userUsername = user.username?.trim().toLowerCase();
+      
+      console.log("[OWNERSHIP CHECK] Owner:", ownerUsername);
+      console.log("[OWNERSHIP CHECK] User:", userUsername);
+      
+      // Only block if role is RESTAURANT and usernames don't match
+      if (user.role === "RESTAURANT" && ownerUsername && ownerUsername !== userUsername) {
+        console.log("[OWNERSHIP CHECK] DENIED - Usernames do not match");
+        alert("❌ You are not the owner of this restaurant.");
+        navigate("/", { replace: true });
+        return;
+      }
+      
+      console.log("[OWNERSHIP CHECK] ALLOWED");
+      setRestaurant(restaurantData);
+      
       const [ordersRes, menuRes] = await Promise.all([
         api.get(`/restaurant/${user.restaurant_id}/orders`),
         api.get(`/restaurants/${user.restaurant_id}/menu`),

@@ -118,14 +118,28 @@ async def get_restaurants(page: int = 1, limit: int = 6):
 
 
 @router.get("/restaurants/{restaurant_id}")
-async def get_restaurant(restaurant_id: str):
-    """Get restaurant details"""
+async def get_restaurant(restaurant_id: str, username: str | None = None, role: str | None = None):
+    """Get restaurant details with ownership check for Restaurant users"""
     db = get_db()
 
     rid = _parse_object_id(restaurant_id, field_name="restaurant_id")
     restaurant = await db.restaurants.find_one({"_id": rid})
     if not restaurant:
         raise HTTPException(status_code=404, detail="Restaurant not found")
+
+    # Check access control: Restaurant users can only access their own restaurant
+    if role == "RESTAURANT" and username:
+        owner_username = restaurant.get("owner_username", "").strip().lower()
+        username_normalized = username.strip().lower()
+        
+        # Debug logging
+        print(f"[OWNERSHIP CHECK] Owner: '{owner_username}' | User: '{username_normalized}'")
+        
+        if owner_username and owner_username != username_normalized:
+            print(f"[OWNERSHIP CHECK] DENIED - Mismatch detected")
+            raise HTTPException(status_code=403, detail="You are not the owner of this restaurant.")
+        
+        print(f"[OWNERSHIP CHECK] ALLOWED - Match confirmed")
 
     return _serialize_mongo_doc(restaurant)
 
@@ -486,6 +500,7 @@ async def get_available_drones_for_restaurant(restaurant_id: str):
 async def create_restaurant(
     name: str = Form(...),
     owner_id: str = Form(...),
+    owner_username: str = Form(...),
     description: str | None = Form(None),
     address: str | None = Form(None),
     phone: str | None = Form(None),
@@ -498,6 +513,8 @@ async def create_restaurant(
         raise HTTPException(status_code=400, detail="name is required")
     if not owner_id or not owner_id.strip():
         raise HTTPException(status_code=400, detail="owner_id is required")
+    if not owner_username or not owner_username.strip():
+        raise HTTPException(status_code=400, detail="owner_username is required")
     if image is None or not image.filename:
         raise HTTPException(status_code=400, detail="image file is required")
     if image.content_type and not image.content_type.startswith("image/"):
@@ -517,6 +534,7 @@ async def create_restaurant(
     rest_doc = {
         "name": name,
         "owner_id": owner_id,
+        "owner_username": owner_username,
         "description": description or "",
         "address": address or "",
         "phone": phone or "",

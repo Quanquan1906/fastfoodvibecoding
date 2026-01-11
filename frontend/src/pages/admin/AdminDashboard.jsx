@@ -18,6 +18,7 @@ function AdminDashboard() {
   const [newRestaurant, setNewRestaurant] = useState({
     name: "",
     owner_id: "",
+    owner_username: "",
     description: "",
     address: "",
     phone: "",
@@ -58,8 +59,8 @@ function AdminDashboard() {
   };
 
   const handleCreateRestaurant = async () => {
-    if (!newRestaurant.name || !newRestaurant.owner_id) {
-      alert("❌ Please fill in name and owner ID");
+    if (!newRestaurant.name || !newRestaurant.owner_id || !newRestaurant.owner_username) {
+      alert("❌ Please fill in name, owner ID, and owner username");
       return;
     }
 
@@ -74,6 +75,7 @@ function AdminDashboard() {
       const formData = new FormData();
       formData.append("name", newRestaurant.name);
       formData.append("owner_id", newRestaurant.owner_id);
+      formData.append("owner_username", newRestaurant.owner_username);
       formData.append("description", newRestaurant.description || "");
       formData.append("address", newRestaurant.address || "");
       formData.append("phone", newRestaurant.phone || "");
@@ -81,7 +83,7 @@ function AdminDashboard() {
 
       await api.post("/admin/restaurants", formData);
 
-      setNewRestaurant({ name: "", owner_id: "", description: "", address: "", phone: "" });
+      setNewRestaurant({ name: "", owner_id: "", owner_username: "", description: "", address: "", phone: "" });
       setNewRestaurantImage(null);
       await fetchAllData();
       alert("✅ Restaurant created!");
@@ -176,6 +178,12 @@ function AdminDashboard() {
               />
               <input
                 type="text"
+                placeholder="Owner Username"
+                value={newRestaurant.owner_username}
+                onChange={(e) => setNewRestaurant({ ...newRestaurant, owner_username: e.target.value })}
+              />
+              <input
+                type="text"
                 placeholder="Description"
                 value={newRestaurant.description}
                 onChange={(e) => setNewRestaurant({ ...newRestaurant, description: e.target.value })}
@@ -222,7 +230,7 @@ function AdminDashboard() {
                         />
                       ) : null}
                       <h4>{rest.name}</h4>
-                      <p>Owner: {rest.owner_id?.substring(0, 8)}</p>
+                      <p>Owner: {rest.owner_username || rest.owner_id?.substring(0, 8)}</p>
                       <p>{rest.description}</p>
                       <p className="id">ID: {rest.id?.substring(0, 12)}</p>
                     </div>
