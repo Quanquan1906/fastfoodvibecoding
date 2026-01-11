@@ -28,7 +28,7 @@ function RestaurantDashboard() {
 
   useEffect(() => {
     if (!user || user.role !== "RESTAURANT") {
-      navigate("/", { replace: true });
+      navigate("/login", { replace: true });
       return;
     }
 

@@ -31,7 +31,7 @@ function Login() {
 
         // Redirect based on role
         if (user.role === "CUSTOMER") {
-          navigate("/customer/home");
+          navigate("/");
         } else if (user.role === "RESTAURANT") {
           navigate("/restaurant/dashboard");
         } else if (user.role === "ADMIN") {

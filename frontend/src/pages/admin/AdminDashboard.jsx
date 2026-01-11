@@ -8,6 +8,7 @@ import "./Admin.css";
 
 function AdminDashboard() {
   const navigate = useNavigate();
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
   const [activeTab, setActiveTab] = useState("restaurants");
   const [restaurants, setRestaurants] = useState([]);
   const [drones, setDrones] = useState([]);
@@ -25,7 +26,12 @@ function AdminDashboard() {
   });
 
   useEffect(() => {
+    if (!user || user.role !== "ADMIN") {
+      navigate("/login", { replace: true });
+      return;
+    }
     fetchAllData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchAllData = async () => {

@@ -24,8 +24,12 @@ function CustomerOrders() {
   }, [user.id]);
 
   useEffect(() => {
+    if (!user?.id) {
+      navigate("/login", { replace: true });
+      return;
+    }
     fetchOrders();
-  }, [fetchOrders]);
+  }, [fetchOrders, navigate, user?.id]);
 
   const handleTrackOrder = (orderId) => {
     navigate(`/customer/track/${orderId}`);

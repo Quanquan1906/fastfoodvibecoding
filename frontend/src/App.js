@@ -14,11 +14,12 @@ function App() {
   return (
     <Router>
       <Routes>
-        {/* Auth */}
-        <Route path="/" element={<Login />} />
+        {/* Public */}
+        <Route path="/" element={<CustomerHome />} />
+        <Route path="/login" element={<Login />} />
 
         {/* Customer Routes */}
-        <Route path="/customer/home" element={<CustomerHome />} />
+        <Route path="/customer/home" element={<Navigate to="/" replace />} />
         <Route path="/customer/checkout/:restaurantId" element={<CustomerCheckout />} />
         <Route path="/customer/track/:orderId" element={<CustomerTrackOrder />} />
         <Route path="/customer/orders" element={<CustomerOrders />} />

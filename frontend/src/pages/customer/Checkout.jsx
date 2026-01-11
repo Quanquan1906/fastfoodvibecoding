@@ -38,8 +38,12 @@ function CustomerCheckout() {
   }, [restaurantId]);
 
   useEffect(() => {
+    if (!user?.id) {
+      navigate("/login", { replace: true });
+      return;
+    }
     fetchRestaurantAndMenu();
-  }, [fetchRestaurantAndMenu]);
+  }, [fetchRestaurantAndMenu, navigate, user?.id]);
 
   const addToCart = (item) => {
     const existingItem = cart.find((ci) => ci.menu_item_id === item.id);
