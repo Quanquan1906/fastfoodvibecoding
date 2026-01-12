@@ -81,6 +81,9 @@ async def login(request: LoginRequest):
             "success": True,
             "user": user
         })
+    except HTTPException:
+        # Preserve intended status codes (e.g., 403 for restaurant ownership)
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

@@ -15,23 +15,24 @@ function App() {
     <Router>
       <Routes>
         {/* Public */}
-        <Route path="/" element={<CustomerHome />} />
+        <Route path="/" element={<Navigate to="/customer/home" replace />} />
         <Route path="/login" element={<Login />} />
 
         {/* Customer Routes */}
-        <Route path="/customer/home" element={<Navigate to="/" replace />} />
+        <Route path="/customer/home" element={<CustomerHome />} />
         <Route path="/customer/checkout/:restaurantId" element={<CustomerCheckout />} />
         <Route path="/customer/track/:orderId" element={<CustomerTrackOrder />} />
         <Route path="/customer/orders" element={<CustomerOrders />} />
 
         {/* Restaurant Routes */}
         <Route path="/restaurant/dashboard" element={<RestaurantDashboard />} />
+        <Route path="/restaurant/dashboard/:restaurantId" element={<RestaurantDashboard />} />
 
         {/* Admin Routes */}
         <Route path="/admin/dashboard" element={<AdminDashboard />} />
 
         {/* Catch all */}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/customer/home" replace />} />
       </Routes>
     </Router>
   );

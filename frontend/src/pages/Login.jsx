@@ -30,16 +30,24 @@ function Login() {
         localStorage.setItem("user", JSON.stringify(user));
 
         // Redirect based on role
-        if (user.role === "CUSTOMER") {
-          navigate("/");
-        } else if (user.role === "RESTAURANT") {
-          navigate("/restaurant/dashboard");
-        } else if (user.role === "ADMIN") {
+        const normalizedRole = (user.role || "").toUpperCase();
+
+        if (normalizedRole === "CUSTOMER") {
+          navigate("/customer/home");
+        } else if (normalizedRole === "RESTAURANT") {
+          if (!user.restaurant_id) {
+            throw new Error("Missing restaurant_id for Restaurant login");
+          }
+          navigate(`/restaurant/dashboard/${user.restaurant_id}`);
+        } else if (normalizedRole === "ADMIN") {
           navigate("/admin/dashboard");
+        } else {
+          throw new Error(`Unknown role: ${user.role}`);
         }
       }
     } catch (error) {
-      alert("❌ Login failed: " + (error.response?.data?.detail || error.message));
+      const errorMessage = error.response?.data?.detail || error.message;
+      alert("❌ " + errorMessage);
     } finally {
       setLoading(false);
     }

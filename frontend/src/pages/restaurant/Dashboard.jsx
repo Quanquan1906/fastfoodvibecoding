@@ -2,12 +2,13 @@
  * Restaurant Dashboard
  */
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import api from "../../services/api";
 import "./Restaurant.css";
 
 function RestaurantDashboard() {
   const navigate = useNavigate();
+  const params = useParams();
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const [restaurant, setRestaurant] = useState(null);
   const [activeTab, setActiveTab] = useState("orders");
@@ -27,20 +28,22 @@ function RestaurantDashboard() {
   });
   const [newItemImage, setNewItemImage] = useState(null);
 
+  const effectiveRestaurantId = params.restaurantId || user.restaurant_id;
+
   useEffect(() => {
     if (!user || user.role !== "RESTAURANT") {
       navigate("/login", { replace: true });
       return;
     }
 
-    if (!user.restaurant_id) {
+    if (!effectiveRestaurantId) {
       setLoading(false);
       return;
     }
 
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.restaurant_id]);
+  }, [effectiveRestaurantId]);
 
   const fetchData = async () => {
     try {
@@ -48,7 +51,7 @@ function RestaurantDashboard() {
       
       // Fetch restaurant details with ownership check
       const restaurantRes = await api.get(
-        `/restaurants/${user.restaurant_id}`,
+        `/restaurants/${effectiveRestaurantId}`,
         { params: { username: user.username, role: user.role } }
       );
       
@@ -73,8 +76,8 @@ function RestaurantDashboard() {
       setRestaurant(restaurantData);
       
       const [ordersRes, menuRes] = await Promise.all([
-        api.get(`/restaurant/${user.restaurant_id}/orders`),
-        api.get(`/restaurants/${user.restaurant_id}/menu`),
+        api.get(`/restaurant/${effectiveRestaurantId}/orders`),
+        api.get(`/restaurants/${effectiveRestaurantId}/menu`),
       ]);
 
       setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : []);
@@ -223,7 +226,7 @@ function RestaurantDashboard() {
     return <div className="page-container"><p>⏳ Loading...</p></div>;
   }
 
-  if (!user.restaurant_id) {
+  if (!effectiveRestaurantId) {
     return (
       <div className="page-container">
         <div className="header">
@@ -236,7 +239,7 @@ function RestaurantDashboard() {
           This restaurant account isn’t linked to a restaurant yet.
         </p>
         <p className="empty-state">
-          Please log out and log in again (it will auto-create one), or create a restaurant via the Admin dashboard.
+          Please contact an admin to create a restaurant and assign your username as the owner.
         </p>
       </div>
     );
