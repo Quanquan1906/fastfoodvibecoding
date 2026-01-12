@@ -33,6 +33,12 @@ class AssignDroneToOrderRequest(BaseModel):
     drone_id: str = Field(..., min_length=1)
 
 
+class AdminCreateDroneRequest(BaseModel):
+    # Intentionally optional so we can return HTTP 400 (not 422) for missing fields.
+    name: str | None = None
+    restaurant_id: str | None = None
+
+
 def _parse_object_id(value: str, *, field_name: str) -> ObjectId:
     """Parse a MongoDB ObjectId from a string.
 
@@ -594,16 +600,50 @@ async def get_all_restaurants():
 
 
 @router.post("/admin/drones")
-async def create_drone(drone: Drone):
-    """Create drone"""
+async def create_drone(payload: AdminCreateDroneRequest):
+    """Create drone (ADMIN).
+
+    Guarantees:
+    - Validates request and restaurant existence before writing to DB.
+    - Returns 201 on success.
+    - Returns 400 on validation failures without writing to DB.
+    """
+
     try:
-        new_drone = await drone_service.create_drone(drone.name, drone.restaurant_id)
-        return JSONResponse({
-            "success": True,
-            "drone": new_drone
-        })
+        print("CREATE DRONE REQUEST:", payload.model_dump())
+
+        db = get_db()
+        name = (payload.name or "").strip()
+        restaurant_id = (payload.restaurant_id or "").strip()
+
+        if not name:
+            raise HTTPException(status_code=400, detail="Missing drone name")
+        if not restaurant_id:
+            raise HTTPException(status_code=400, detail="Missing restaurant_id")
+
+        rid = _parse_object_id(restaurant_id, field_name="restaurant_id")
+        restaurant = await db.restaurants.find_one({"_id": rid})
+        if not restaurant:
+            raise HTTPException(status_code=400, detail="Invalid restaurant_id (restaurant not found)")
+
+        new_drone = await drone_service.create_drone(name, str(rid))
+
+        print("DRONE SAVED:", new_drone.get("id"))
+        payload_out = {"message": "Drone created successfully", "drone": new_drone}
+        return JSONResponse(
+            status_code=201,
+            content=jsonable_encoder(payload_out, custom_encoder={ObjectId: str}),
+        )
+    except HTTPException:
+        # Validation errors: guaranteed no DB write happened before these.
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        import traceback
+
+        print("CREATE DRONE UNHANDLED ERROR:", e)
+        traceback.print_exc()
+        # Return JSON so the frontend can show the real message.
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.post("/admin/assign-drone")
@@ -634,7 +674,9 @@ async def get_all_drones():
     """Get all drones"""
     try:
         drones = await drone_service.get_all_drones()
-        return drones
+        return JSONResponse(
+            content=jsonable_encoder(drones, custom_encoder={ObjectId: str})
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -644,9 +686,11 @@ async def get_restaurant_drones(restaurant_id: str):
     """Get drones for restaurant"""
     try:
         drones = await drone_service.get_restaurant_drones(restaurant_id)
-        return drones
+        return JSONResponse(
+            content=jsonable_encoder(drones, custom_encoder={ObjectId: str})
+        )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/admin/users")

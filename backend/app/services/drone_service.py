@@ -18,6 +18,11 @@ class DroneService:
         if drone_id is not None:
             serialized["id"] = str(drone_id)
 
+        # Ensure MongoDB ObjectId fields are JSON-serializable
+        restaurant_id = serialized.get("restaurant_id")
+        if isinstance(restaurant_id, ObjectId):
+            serialized["restaurant_id"] = str(restaurant_id)
+
         # Backward-compat: older records may have status=IDLE
         if serialized.get("status") == "IDLE":
             serialized["status"] = "AVAILABLE"

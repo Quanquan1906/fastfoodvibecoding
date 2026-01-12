@@ -103,12 +103,42 @@ function AdminDashboard() {
     }
 
     try {
-      await api.post("/admin/drones", newDrone);
-      setNewDrone({ name: "", restaurant_id: "" });
-      await fetchAllData();
-      alert("✅ Drone created!");
+      const payload = {
+        name: String(newDrone.name).trim(),
+        restaurant_id: String(newDrone.restaurant_id).trim(),
+      };
+
+      console.log("CREATE DRONE REQUEST:", payload);
+      const response = await api.post("/admin/drones", payload);
+      console.log("CREATE DRONE RESPONSE:", response);
+
+      if (response.status === 200 || response.status === 201) {
+        alert("✅ Drone created successfully");
+        setNewDrone({ name: "", restaurant_id: "" });
+
+        // Refresh drones list immediately (don’t fail the UX if another tab’s data has issues)
+        try {
+          const droneRes = await api.get("/admin/drones");
+          setDrones(droneRes.data);
+        } catch (refreshError) {
+          console.warn("Failed to refresh drones list:", refreshError);
+        }
+      } else {
+        alert("❌ Failed to create drone");
+      }
     } catch (error) {
-      alert("❌ Error: " + error.message);
+      const detail = error?.response?.data?.detail;
+      if (detail) {
+        alert("❌ " + detail);
+        return;
+      }
+
+      // Axios uses 'Network Error' for CORS blocks / connection failures.
+      const isNetwork = !error?.response;
+      const msg = isNetwork
+        ? "Network error (possible CORS or backend not reachable). Check backend logs and CORS settings."
+        : (error.message || "Request failed");
+      alert("❌ " + msg);
     }
   };
 
