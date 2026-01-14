@@ -3,7 +3,7 @@
  */
 import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "../../services/api";
+import { getCustomerOrders } from "../../infrastructure/api/endpoints/orderApi";
 import "./Customer.css";
 
 function CustomerOrders() {
@@ -14,8 +14,8 @@ function CustomerOrders() {
 
   const fetchOrders = useCallback(async () => {
     try {
-      const response = await api.get(`/customer/${user.id}/orders`);
-      setOrders(response.data);
+      const data = await getCustomerOrders(user.id);
+      setOrders(data || []);
       setLoading(false);
     } catch (error) {
       console.error("Error fetching orders:", error);
@@ -32,6 +32,11 @@ function CustomerOrders() {
   }, [fetchOrders, navigate, user?.id]);
 
   const handleTrackOrder = (orderId) => {
+    // Validate orderId before navigation
+    if (!orderId || orderId === "undefined" || orderId.trim() === "") {
+      alert("❌ Invalid order ID. Cannot track this order.");
+      return;
+    }
     navigate(`/customer/track/${orderId}`);
   };
 

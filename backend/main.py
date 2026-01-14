@@ -1,8 +1,9 @@
 """FastAPI main application for FastFood delivery system"""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.core.database import connect_db, close_db
-from app.api.routes import router
+from app.infrastructure.persistence.database import connect_db, close_db
+from app.presentation.routers import auth_router, restaurant_router, order_router, menu_item_router, drone_router, user_router, health_router
+from app.presentation.websocket.ws_router import router as ws_router
 
 # Create FastAPI app
 app = FastAPI(
@@ -26,9 +27,15 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
-# Include routes
-app.include_router(router)
-
+# Include routers
+app.include_router(auth_router.router)
+app.include_router(restaurant_router.router)
+app.include_router(order_router.router)
+app.include_router(menu_item_router.router)
+app.include_router(drone_router.router)
+app.include_router(user_router.router)
+app.include_router(health_router.router)
+app.include_router(ws_router)
 
 # Startup and shutdown events
 @app.on_event("startup")

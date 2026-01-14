@@ -3,7 +3,7 @@
  */
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "../../services/api";
+import { getRestaurants } from "../../infrastructure/api/endpoints/restaurantApi";
 import "./Customer.css";
 
 function CustomerHome() {
@@ -42,11 +42,9 @@ function CustomerHome() {
   const fetchRestaurants = async (page) => {
     try {
       setLoading(true);
-      const response = await api.get("/restaurants", {
-        params: { page, limit: 10 }
-      });
-      setRestaurants(response.data.data);
-      setTotalPages(response.data.totalPages);
+      const data = await getRestaurants(page, 10);
+      setRestaurants(data.data || []);
+      setTotalPages(data.totalPages || 1);
       setLoading(false);
     } catch (error) {
       console.error("Error fetching restaurants:", error);

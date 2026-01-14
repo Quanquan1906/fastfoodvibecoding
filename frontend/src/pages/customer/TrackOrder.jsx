@@ -3,7 +3,8 @@
  */
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import api from "../../services/api";
+import { getOrder, updateOrderStatus, mockPayment } from "../../infrastructure/api/endpoints/orderApi";
+import { connectOrderWebSocket, disconnectWebSocket } from "../../infrastructure/websocket/wsClient";
 import DroneMap from "../../components/DroneMap";
 import "./Customer.css";
 
@@ -20,28 +21,50 @@ function CustomerTrackOrder() {
   const droneLon = order?.drone_lon;
   const [loading, setLoading] = useState(true);
   const [paymentDone, setPaymentDone] = useState(false);
+  const [error, setError] = useState(null);
   const wsRef = useRef(null);
   const [progress, setProgress] = useState(0);
   const [completing, setCompleting] = useState(false);
   const [deliveredMessage, setDeliveredMessage] = useState("");
   const [startPoint, setStartPoint] = useState(null);
 
+  // Validate orderId on component mount
+  useEffect(() => {
+    if (!orderId || orderId === "undefined" || orderId.trim() === "") {
+      setError("Invalid order ID. Please go back and try again.");
+      setLoading(false);
+    }
+  }, [orderId]);
+
   const fetchOrder = useCallback(async () => {
+    // Guard against invalid orderId
+    if (!orderId || orderId === "undefined") {
+      console.warn("Invalid orderId, skipping fetch");
+      return;
+    }
+    
     try {
-      const response = await api.get(`/orders/${orderId}`);
-      setOrder(response.data);
-      if (response.data?.status === "COMPLETED") {
+      const data = await getOrder(orderId);
+      setOrder(data);
+      if (data?.status === "COMPLETED") {
         setProgress(100);
         setDeliveredMessage("Order delivered successfully");
       }
       setLoading(false);
     } catch (error) {
       console.error("Error fetching order:", error);
+      setError("Failed to load order. Please try again.");
       setLoading(false);
     }
   }, [orderId]);
 
   const setupWebSocket = useCallback(() => {
+    // Guard against invalid orderId
+    if (!orderId || orderId === "undefined") {
+      console.warn("Invalid orderId, skipping WebSocket setup");
+      return;
+    }
+
     const wsUrl = `ws://localhost:8000/ws/orders/${orderId}`;
     const wsConnection = new WebSocket(wsUrl);
 
@@ -54,12 +77,19 @@ function CustomerTrackOrder() {
       console.error("WebSocket error:", error);
     };
 
+    wsConnection.onclose = () => {
+      console.log("WebSocket closed");
+    };
+
     wsRef.current = wsConnection;
   }, [orderId]);
 
   useEffect(() => {
-    fetchOrder();
-    setupWebSocket();
+    // Only fetch and setup WebSocket if orderId is valid
+    if (orderId && orderId !== "undefined") {
+      fetchOrder();
+      setupWebSocket();
+    }
 
     return () => {
       if (wsRef.current) {
@@ -96,9 +126,9 @@ function CustomerTrackOrder() {
     const doComplete = async () => {
       setCompleting(true);
       try {
-        const res = await api.post(`/orders/${orderId}/complete`);
-        if (res.data?.success) {
-          setDeliveredMessage(res.data.message || "Order delivered successfully");
+        const res = await updateOrderStatus(orderId, "COMPLETED");
+        if (res?.success || res?.status === "COMPLETED") {
+          setDeliveredMessage(res?.message || "Order delivered successfully");
           // Ensure UI updates even if websocket isn't available
           setOrder((prev) => (prev ? { ...prev, status: "COMPLETED" } : prev));
           await fetchOrder();
@@ -120,10 +150,10 @@ function CustomerTrackOrder() {
 
   const handleMockPayment = async () => {
     try {
-      const response = await api.post(`/payments/mock/${orderId}`);
-      if (response.data.success) {
+      const response = await mockPayment(orderId);
+      if (response?.success || response?.payment) {
         setPaymentDone(true);
-        alert("✅ " + response.data.payment.message);
+        alert("✅ " + (response.payment?.message || "Payment successful"));
         // Refresh order status
         await fetchOrder();
       }
@@ -153,6 +183,17 @@ function CustomerTrackOrder() {
     };
     return emojis[status] || "❓";
   };
+
+  if (error) {
+    return (
+      <div className="page-container">
+        <p>❌ {error}</p>
+        <button onClick={() => navigate("/customer/orders")} className="btn btn-primary">
+          Back to Orders
+        </button>
+      </div>
+    );
+  }
 
   if (loading) {
     return <div className="page-container"><p>⏳ Loading order...</p></div>;

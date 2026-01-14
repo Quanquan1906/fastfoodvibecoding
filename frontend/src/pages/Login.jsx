@@ -3,7 +3,7 @@
  */
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "../services/api";
+import { login } from "../infrastructure/api/endpoints/authApi";
 import "./Login.css";
 
 function Login() {
@@ -20,13 +20,10 @@ function Login() {
 
     setLoading(true);
     try {
-      const response = await api.post("/login", {
-        username: username,
-        role: role,
-      });
+      const response = await login(username, role);
 
-      if (response.data.success) {
-        const user = response.data.user;
+      if (response) {
+        const user = response.user || response;
         localStorage.setItem("user", JSON.stringify(user));
 
         // Redirect based on role

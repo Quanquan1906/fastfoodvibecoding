@@ -1,0 +1,3 @@
+/**
+ * Application utils module
+ */

@@ -1,7 +1,11 @@
 import './App.css';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 
-// Pages
+// Application layer - Context providers
+import { AuthProvider } from './application/context/AuthContext';
+import { OrderProvider } from './application/context/OrderContext';
+
+// Presentation layer - Pages (currently in old location, will move to presentation/pages/)
 import Login from './pages/Login';
 import CustomerHome from './pages/customer/Home';
 import CustomerCheckout from './pages/customer/Checkout';
@@ -13,27 +17,31 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 function App() {
   return (
     <Router>
-      <Routes>
-        {/* Public */}
-        <Route path="/" element={<Navigate to="/customer/home" replace />} />
-        <Route path="/login" element={<Login />} />
+      <AuthProvider>
+        <OrderProvider>
+          <Routes>
+            {/* Public */}
+            <Route path="/" element={<Navigate to="/customer/home" replace />} />
+            <Route path="/login" element={<Login />} />
 
-        {/* Customer Routes */}
-        <Route path="/customer/home" element={<CustomerHome />} />
-        <Route path="/customer/checkout/:restaurantId" element={<CustomerCheckout />} />
-        <Route path="/customer/track/:orderId" element={<CustomerTrackOrder />} />
-        <Route path="/customer/orders" element={<CustomerOrders />} />
+            {/* Customer Routes */}
+            <Route path="/customer/home" element={<CustomerHome />} />
+            <Route path="/customer/checkout/:restaurantId" element={<CustomerCheckout />} />
+            <Route path="/customer/track/:orderId" element={<CustomerTrackOrder />} />
+            <Route path="/customer/orders" element={<CustomerOrders />} />
 
-        {/* Restaurant Routes */}
-        <Route path="/restaurant/dashboard" element={<RestaurantDashboard />} />
-        <Route path="/restaurant/dashboard/:restaurantId" element={<RestaurantDashboard />} />
+            {/* Restaurant Routes */}
+            <Route path="/restaurant/dashboard" element={<RestaurantDashboard />} />
+            <Route path="/restaurant/dashboard/:restaurantId" element={<RestaurantDashboard />} />
 
-        {/* Admin Routes */}
-        <Route path="/admin/dashboard" element={<AdminDashboard />} />
+            {/* Admin Routes */}
+            <Route path="/admin/dashboard" element={<AdminDashboard />} />
 
-        {/* Catch all */}
-        <Route path="*" element={<Navigate to="/customer/home" replace />} />
-      </Routes>
+            {/* Catch all */}
+            <Route path="*" element={<Navigate to="/customer/home" replace />} />
+          </Routes>
+        </OrderProvider>
+      </AuthProvider>
     </Router>
   );
 }

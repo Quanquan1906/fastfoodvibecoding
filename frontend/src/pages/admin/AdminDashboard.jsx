@@ -3,7 +3,10 @@
  */
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "../../services/api";
+import { getRestaurants, createRestaurant } from "../../infrastructure/api/endpoints/restaurantApi";
+import { getAllDrones, createDrone } from "../../infrastructure/api/endpoints/droneApi";
+import { getAllUsers } from "../../infrastructure/api/endpoints/authApi";
+import { getAllOrders } from "../../infrastructure/api/endpoints/orderApi";
 import "./Admin.css";
 
 function AdminDashboard() {
@@ -41,16 +44,16 @@ function AdminDashboard() {
 
   const fetchAllData = async () => {
     try {
-      const [restRes, droneRes, usersRes, ordersRes] = await Promise.all([
-        api.get("/admin/restaurants"),
-        api.get("/admin/drones"),
-        api.get("/admin/users"),
-        api.get("/admin/orders"),
+      const [restaurants, drones, users, orders] = await Promise.all([
+        getRestaurants(),
+        getAllDrones(),
+        getAllUsers(),
+        getAllOrders(),
       ]);
-      setRestaurants(restRes.data);
-      setDrones(droneRes.data);
-      setUsers(usersRes.data);
-      setOrders(ordersRes.data);
+      setRestaurants(restaurants.data || restaurants || []);
+      setDrones(drones.data || drones || []);
+      setUsers(users.data || users || []);
+      setOrders(orders.data || orders || []);
       setLoading(false);
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -81,7 +84,7 @@ function AdminDashboard() {
       formData.append("phone", newRestaurant.phone || "");
       formData.append("image", newRestaurantImage);
 
-      await api.post("/admin/restaurants", formData);
+      await createRestaurant(formData);
 
       setNewRestaurant({ name: "", owner_id: "", owner_username: "", description: "", address: "", phone: "" });
       setNewRestaurantImage(null);
@@ -109,17 +112,17 @@ function AdminDashboard() {
       };
 
       console.log("CREATE DRONE REQUEST:", payload);
-      const response = await api.post("/admin/drones", payload);
+      const response = await createDrone(payload);
       console.log("CREATE DRONE RESPONSE:", response);
 
-      if (response.status === 200 || response.status === 201) {
+      if (response) {
         alert("✅ Drone created successfully");
         setNewDrone({ name: "", restaurant_id: "" });
 
         // Refresh drones list immediately (don’t fail the UX if another tab’s data has issues)
         try {
-          const droneRes = await api.get("/admin/drones");
-          setDrones(droneRes.data);
+          const drones = await getAllDrones();
+          setDrones(drones.data || drones || []);
         } catch (refreshError) {
           console.warn("Failed to refresh drones list:", refreshError);
         }

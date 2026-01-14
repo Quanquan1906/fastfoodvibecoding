@@ -3,7 +3,8 @@
  */
 import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import api from "../../services/api";
+import { getRestaurant, getMenuItems } from "../../infrastructure/api/endpoints/restaurantApi";
+import { createOrder } from "../../infrastructure/api/endpoints/orderApi";
 import "./Customer.css";
 
 function CustomerCheckout() {
@@ -21,12 +22,12 @@ function CustomerCheckout() {
   const fetchRestaurantAndMenu = useCallback(async () => {
     try {
       setErrorMessage("");
-      const [restRes, menuRes] = await Promise.all([
-        api.get(`/restaurants/${restaurantId}`),
-        api.get(`/restaurants/${restaurantId}/menu`),
+      const [rest, menu] = await Promise.all([
+        getRestaurant(restaurantId),
+        getMenuItems(restaurantId),
       ]);
-      setRestaurant(restRes.data);
-      setMenuItems(menuRes.data);
+      setRestaurant(rest);
+      setMenuItems(menu);
       setLoading(false);
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -96,7 +97,7 @@ function CustomerCheckout() {
     setOrdering(true);
     try {
       const total = Number(calculateTotal().toFixed(2));
-      const response = await api.post("/orders", {
+      const response = await createOrder({
         customer_id: user.id,
         restaurant_id: restaurantId,
         items: cart.map((ci) => ({
@@ -109,8 +110,16 @@ function CustomerCheckout() {
         delivery_address: deliveryAddress.trim(),
       });
 
-      if (response.data.success) {
-        const orderId = response.data.order.id;
+      if (response) {
+        // Try multiple fields to extract order ID (order.id, id, order._id, _id)
+        const orderId = response.order?.id || response.order?._id || response.id || response._id;
+        
+        // Validate orderId before navigation
+        if (!orderId || orderId === "undefined") {
+          alert("❌ Error: Order created but ID not returned. Please go back and check your orders.");
+          return;
+        }
+        
         navigate(`/customer/track/${orderId}`);
       }
     } catch (error) {

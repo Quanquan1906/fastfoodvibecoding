@@ -3,7 +3,9 @@
  */
 import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import api from "../../services/api";
+import { getRestaurant, createMenuItem, getMenuItems, updateRestaurant } from "../../infrastructure/api/endpoints/restaurantApi";
+import { getRestaurantOrders, acceptOrder, updateOrderStatus } from "../../infrastructure/api/endpoints/orderApi";
+import { getAvailableDrones, assignDrone } from "../../infrastructure/api/endpoints/droneApi";
 import "./Restaurant.css";
 
 function RestaurantDashboard() {
@@ -49,13 +51,8 @@ function RestaurantDashboard() {
     try {
       setErrorMessage("");
       
-      // Fetch restaurant details with ownership check
-      const restaurantRes = await api.get(
-        `/restaurants/${effectiveRestaurantId}`,
-        { params: { username: user.username, role: user.role } }
-      );
-      
-      const restaurantData = restaurantRes.data;
+      // Fetch restaurant details
+      const restaurantData = await getRestaurant(effectiveRestaurantId);
       
       // Verify ownership with case-insensitive and trimmed comparison
       const ownerUsername = restaurantData.owner_username?.trim().toLowerCase();
@@ -75,13 +72,13 @@ function RestaurantDashboard() {
       console.log("[OWNERSHIP CHECK] ALLOWED");
       setRestaurant(restaurantData);
       
-      const [ordersRes, menuRes] = await Promise.all([
-        api.get(`/restaurant/${effectiveRestaurantId}/orders`),
-        api.get(`/restaurants/${effectiveRestaurantId}/menu`),
+      const [orders, menu] = await Promise.all([
+        getRestaurantOrders(effectiveRestaurantId),
+        getMenuItems(effectiveRestaurantId),
       ]);
 
-      setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : []);
-      setMenuItems(Array.isArray(menuRes.data) ? menuRes.data : []);
+      setOrders(Array.isArray(orders) ? orders : []);
+      setMenuItems(Array.isArray(menu) ? menu : []);
       setLoading(false);
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -125,7 +122,7 @@ function RestaurantDashboard() {
       formData.append("image", newItemImage);
 
       // Do NOT set Content-Type manually; axios will add the correct boundary.
-      await api.post("/restaurant/menu", formData);
+      await createMenuItem(user.restaurant_id, formData);
 
       setNewItem({ name: "", description: "", price: "" });
       setNewItemImage(null);
@@ -146,7 +143,7 @@ function RestaurantDashboard() {
 
   const handleAcceptOrder = async (orderId) => {
     try {
-      await api.post(`/restaurant/orders/${orderId}/accept`);
+      await acceptOrder(orderId);
       await fetchData();
       alert("✅ Order accepted!");
     } catch (error) {
@@ -156,11 +153,7 @@ function RestaurantDashboard() {
 
   const handleUpdateStatus = async (orderId, status) => {
     try {
-      await api.post(
-        `/restaurant/orders/${orderId}/status`,
-        null,
-        { params: { status } }
-      );
+      await updateOrderStatus(orderId, status);
       await fetchData();
       alert(`✅ Status updated to ${status}`);
     } catch (error) {
@@ -176,8 +169,8 @@ function RestaurantDashboard() {
     setErrorMessage("");
 
     try {
-      const res = await api.get(`/restaurant/${user.restaurant_id}/drones`);
-      setAvailableDrones(Array.isArray(res.data) ? res.data : []);
+      const drones = await getAvailableDrones(user.restaurant_id);
+      setAvailableDrones(Array.isArray(drones) ? drones : []);
     } catch (error) {
       const status = error?.response?.status;
       const detail = error?.response?.data?.detail;
@@ -200,7 +193,7 @@ function RestaurantDashboard() {
 
     try {
       setErrorMessage("");
-      await api.post(`/orders/${orderId}/assign-drone`, { drone_id: selectedDroneId });
+      await assignDrone(orderId, selectedDroneId);
       setAssigningOrderId(null);
       setSelectedDroneId("");
       setAvailableDrones([]);

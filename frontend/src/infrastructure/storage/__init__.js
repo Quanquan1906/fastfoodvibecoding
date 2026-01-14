@@ -1,0 +1,3 @@
+/**
+ * Infrastructure storage module
+ */
