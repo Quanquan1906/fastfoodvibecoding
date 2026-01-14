@@ -45,5 +45,5 @@ class ConnectionManager:
         await websocket.send_text(message)
 
 
-# Global connection managerr
+# Global connection managerrr
 manager = ConnectionManager()
